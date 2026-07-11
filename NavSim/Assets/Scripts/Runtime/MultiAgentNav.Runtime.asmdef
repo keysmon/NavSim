@@ -1,0 +1,6 @@
+{
+  "name": "MultiAgentNav.Runtime",
+  "references": ["Unity.ML-Agents"],
+  "includePlatforms": [],
+  "excludePlatforms": []
+}
