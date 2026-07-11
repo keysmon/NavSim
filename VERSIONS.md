@@ -1,32 +1,36 @@
 # Pinned Versions (M0)
 
-Stability-first posture (see design spec §9). Values below were researched on 2026-07-10.
-Items marked CONFIRM must be verified against the official ML-Agents 4.0 release notes and
-Package Manager at real install time before relying on them.
+Stability-first posture (see design spec §9). Researched and verified on 2026-07-10/11.
 
-## Confirmed from research (2026-07-10)
+## Confirmed and resolved in the NavSim project
 
-- Python (interpreter): 3.10.x, within the range 3.10.1 to 3.10.12 (mlagents requires `>=3.10.1, <=3.10.12`).
-- mlagents (Python package): 1.1.0  (latest on PyPI, released 2024-10-05).
-- mlagents-envs (Python package): matches mlagents (1.1.0).
-- com.unity.ml-agents (Unity package): 4.0.x  (latest; brings the Sentis-based Inference Engine).
-- Unity Inference Engine (Sentis / com.unity.ai.inference): 2.x  (pulled in transitively by ml-agents).
+- Unity: 6000.5.3f1 (installed at /Applications/Unity/Hub/Editor/6000.5.3f1/).
+  Project created and packages resolved via batchmode CLI.
+- com.unity.ml-agents (Unity package): 4.0.3 (latest, released 2026-04-17). RESOLVED + compiled OK.
+- com.unity.ai.inference (Sentis, the Inference Engine): 2.6.1 (resolved transitively by ml-agents 4.0.3).
 - ONNX opset for Sentis: must be within 7 to 25.
 - WebGL inference backend: CPU only (Sentis has no GPU compute backend on WebGL).
 
-## CONFIRM at install time
+## Python side (confirmed from research, not yet installed)
 
-- Unity: install the latest Unity 6 LTS (6000.x.y) via Unity Hub; record the exact patch here after install.
-- The Unity-package (4.0.x) to Python-package (1.1.0) pairing. These are versioned independently.
-  The 4.0-vs-1.1.0 skew is expected, but confirm the exact compatible pair from the com.unity.ml-agents
-  4.0 Installation doc: https://docs.unity3d.com/Packages/com.unity.ml-agents@4.0/manual/Installation.html
-- torch (PyTorch): not pinned on PyPI's summary; `pip install mlagents` resolves it.
-  After install, run `pip freeze | grep torch` and record the exact version here.
+- Python (interpreter): 3.10.x, within 3.10.1 to 3.10.12 (mlagents requires `>=3.10.1, <=3.10.12`).
+- mlagents (Python package): 1.1.0 (latest on PyPI, 2024-10-05). Versioned separately from the
+  Unity package on purpose; the 4.0.3-vs-1.1.0 skew is expected.
+- mlagents-envs: matches mlagents (1.1.0).
+- torch (PyTorch): resolved by `pip install mlagents`; run `pip freeze | grep torch` after install and pin here.
 
-## Toolchain status on this machine (checked 2026-07-10)
+## Watch-items
+
+- Licensing (headless): the package-resolve batchmode run logged
+  `[Licensing::Module] Error: Access token is unavailable; failed to update`,
+  yet still compiled and exited 0. If a later batchmode op (WebGL build, `-runTests`) fails on
+  licensing, open the Editor GUI once to refresh the license token, then retry headless.
+- python3.10 is NOT on PATH as `python3.10`. Resolve before Task 5 (training) -
+  likely `python3`, or install via pyenv (`pyenv install 3.10.12`) or conda. Must be 3.10.1-3.10.12.
+- Vercel CLI: 54.4.1 present (55.0.0 available; only needed at Task 7).
+
+## Toolchain status (checked 2026-07-11)
 
 - git: 2.50.1 (OK).
-- Unity 6 + Hub: reported installed by user (record exact editor version after Task 1).
-- Vercel CLI: 54.4.1 present (a minor upgrade to 55.0.0 is available; only needed at Task 7).
-- python3.10: NOT found on PATH as `python3.10`. Resolve before Task 5
-  (it may be installed as `python3`, or via pyenv/conda). Must land within 3.10.1 to 3.10.12.
+- Unity 6000.5.3f1: installed; batchmode CLI verified working (Personal license, user hangruan).
+- Vercel CLI: 54.4.1.
