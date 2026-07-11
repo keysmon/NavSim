@@ -19,6 +19,14 @@ Stability-first posture (see design spec §9). Researched and verified on 2026-0
 - mlagents-envs: matches mlagents (1.1.0).
 - torch (PyTorch): resolved by `pip install mlagents`; run `pip freeze | grep torch` after install and pin here.
 
+## Dev tooling (local only)
+
+- MCP for Unity (com.coplaydev.unity-mcp v10.0.0) is added to NavSim/Packages/manifest.json so
+  Claude Code can drive the Editor. It is AI/editor tooling, NOT part of the shipped simulator.
+  Per the local-only rule, STRIP this dependency from the committed manifest before adding any
+  GitHub remote. Server launches via `uvx --from <git-url> mcp-for-unity` (MCP port 6500);
+  the Unity Bridge runs inside the open Editor (Window > MCP for Unity).
+
 ## Watch-items
 
 - Licensing (headless): the package-resolve batchmode run logged
