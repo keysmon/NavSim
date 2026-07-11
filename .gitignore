@@ -1,0 +1,32 @@
+# --- AI scaffolding: local only, never pushed ---
+docs/superpowers/
+CLAUDE.md
+.claude/
+
+# --- Unity ---
+NavSim/[Ll]ibrary/
+NavSim/[Tt]emp/
+NavSim/[Oo]bj/
+NavSim/[Bb]uild/
+NavSim/[Bb]uilds/
+NavSim/[Ll]ogs/
+NavSim/[Uu]ser[Ss]ettings/
+NavSim/[Mm]emoryCaptures/
+NavSim/*.csproj
+NavSim/*.sln
+NavSim/.vs/
+
+# --- Python ---
+.venv-nav/
+__pycache__/
+*.pyc
+training/results/
+
+# --- Vercel / node ---
+web/.vercel/
+web/build/
+node_modules/
+
+# --- ML-Agents run outputs ---
+results/
+*.onnx.meta.bak
