@@ -12,6 +12,8 @@ NavSim/[Bb]uilds/
 NavSim/[Ll]ogs/
 NavSim/[Uu]ser[Ss]ettings/
 NavSim/[Mm]emoryCaptures/
+NavSim/[Ss]creenshots/
+NavSim/[Ss]creenshots.meta
 NavSim/*.csproj
 NavSim/*.sln
 NavSim/.vs/
