@@ -20,6 +20,8 @@ NavSim/[Mm]emoryCaptures/
 NavSim/Assets/ML-Agents/
 NavSim/Assets/ML-Agents.meta
 NavSim/Assets/Resources/PerformanceTestRun*
+NavSim/Assets/Resources.meta
+NavSim/Assets/Resources/
 NavSim/*.csproj
 NavSim/*.sln
 NavSim/.vs/
