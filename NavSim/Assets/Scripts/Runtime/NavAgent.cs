@@ -5,7 +5,8 @@ using Unity.MLAgents.Sensors;
 
 namespace NavSim.Runtime
 {
-    [RequireComponent(typeof(Rigidbody2D))]
+    // 3D navigation agent: moves on the XZ ground plane, turns about the Y axis (unicycle model).
+    [RequireComponent(typeof(Rigidbody))]
     public class NavAgent : Agent
     {
         [SerializeField] private NavEnvironment env;
@@ -13,21 +14,22 @@ namespace NavSim.Runtime
         [SerializeField] private float maxTurnDegPerStep = 6f;
         [SerializeField] private RewardConfig reward = RewardConfig.Default;
 
-        private Rigidbody2D _rb;
+        private Rigidbody _rb;
         private float _prevDist;
 
-        public override void Initialize() => _rb = GetComponent<Rigidbody2D>();
+        public override void Initialize() => _rb = GetComponent<Rigidbody>();
 
         public override void OnEpisodeBegin()
         {
             env.ResetEpisode(transform);
-            _rb.linearVelocity = Vector2.zero;
-            _prevDist = Vector2.Distance(transform.position, env.GoalPosition);
+            _rb.linearVelocity = Vector3.zero;
+            _rb.angularVelocity = Vector3.zero;
+            _prevDist = Vector3.Distance(transform.position, env.GoalPosition);
         }
 
         public override void CollectObservations(VectorSensor sensor)
         {
-            float heading = transform.eulerAngles.z;
+            float heading = transform.eulerAngles.y;
             float[] obs = ObservationBuilder.Build(
                 transform.position, heading, _rb.linearVelocity,
                 env.GoalPosition, maxSpeed, env.ArenaDiagonal, reward.compassWeight);
@@ -39,11 +41,13 @@ namespace NavSim.Runtime
             float forward = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
             float turn = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
 
-            transform.Rotate(0f, 0f, turn * maxTurnDegPerStep);
-            _rb.linearVelocity = (Vector2)transform.right * forward * maxSpeed;
+            transform.Rotate(0f, turn * maxTurnDegPerStep, 0f);
+            Vector3 vel = transform.forward * forward * maxSpeed;
+            vel.y = 0f;
+            _rb.linearVelocity = vel;
 
-            Vector2 pos = transform.position;
-            float dist = Vector2.Distance(pos, env.GoalPosition);
+            Vector3 pos = transform.position;
+            float dist = Vector3.Distance(pos, env.GoalPosition);
             bool reached = env.ReachedGoal(pos);
 
             AddReward(RewardCalculator.Step(_prevDist, dist, reached, reward));
@@ -55,8 +59,8 @@ namespace NavSim.Runtime
         public override void Heuristic(in ActionBuffers actionsOut)
         {
             var ca = actionsOut.ContinuousActions;
-            ca[0] = Input.GetAxis("Vertical");    // forward
-            ca[1] = -Input.GetAxis("Horizontal"); // turn
+            ca[0] = Input.GetAxis("Vertical");   // forward
+            ca[1] = Input.GetAxis("Horizontal"); // turn
         }
     }
 }
