@@ -15,6 +15,11 @@ NavSim/[Mm]emoryCaptures/
 **/[Ss]creenshots/
 **/[Ss]creenshots.meta
 .DS_Store
+
+# ML-Agents training timers + Unity perf-test artifacts written into Assets/
+NavSim/Assets/ML-Agents/
+NavSim/Assets/ML-Agents.meta
+NavSim/Assets/Resources/PerformanceTestRun*
 NavSim/*.csproj
 NavSim/*.sln
 NavSim/.vs/
