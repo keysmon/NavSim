@@ -21,6 +21,6 @@ behaviors:
         strength: 1.0
       # No curiosity at M0. The M4 plan adds a `curiosity:` reward signal.
     keep_checkpoints: 5
-    max_steps: 500000
+    max_steps: 150000
     time_horizon: 64
     summary_freq: 10000
