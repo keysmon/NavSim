@@ -1,6 +1,17 @@
 # ML-Agents Python trainer for NavSim (M0).
-# The Python package (mlagents) is versioned separately from the Unity package
-# (com.unity.ml-agents 4.0.x). Confirm this pairing against the 4.0 release notes
-# before a real run - see ../VERSIONS.md.
-# Installing mlagents also pulls mlagents-envs and a compatible torch automatically.
+# Verified working on macOS arm64 + Python 3.10.12 (2026-07-11).
+#
+# GOTCHA: mlagents 1.1.0 pins grpcio==1.48.2, which has no prebuilt wheel for
+# macOS arm64 / py3.10 and fails to build from source (its setup.py imports
+# pkg_resources, which uv's isolated build env / modern setuptools no longer exposes).
+#
+# FIX: override grpcio to a wheel-having version. Reproduce with:
+#
+#   uv python install 3.10.12
+#   uv venv --python 3.10.12 .venv-nav
+#   printf 'grpcio>=1.62.0\n' > /tmp/grpc_override.txt
+#   uv pip install --python .venv-nav/bin/python --override /tmp/grpc_override.txt "setuptools<66" mlagents==1.1.0
+#
+# For an EXACT reproduction, install from requirements-lock.txt instead.
+# Key resolved versions: grpcio 1.82.1, torch 2.12.1, numpy 1.23.5, onnx 1.15.0, protobuf 3.20.3.
 mlagents==1.1.0
