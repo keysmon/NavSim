@@ -1,0 +1,6 @@
+# ML-Agents Python trainer for NavSim (M0).
+# The Python package (mlagents) is versioned separately from the Unity package
+# (com.unity.ml-agents 4.0.x). Confirm this pairing against the 4.0 release notes
+# before a real run - see ../VERSIONS.md.
+# Installing mlagents also pulls mlagents-envs and a compatible torch automatically.
+mlagents==1.1.0
