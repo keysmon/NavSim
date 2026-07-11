@@ -1,0 +1,7 @@
+<linker>
+  <!-- Prevent managed bytecode stripping from mangling Google.Protobuf, which
+       breaks the IL2CPP WebGL build (ReadOnlySpan / modreq(InAttribute) conversion
+       errors on the stripped "_Packed" assembly). ML-Agents' gRPC communicator pulls
+       in Google.Protobuf even for inference-only builds. -->
+  <assembly fullname="Google.Protobuf" preserve="all"/>
+</linker>
