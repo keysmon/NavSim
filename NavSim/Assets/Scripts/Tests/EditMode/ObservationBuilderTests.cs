@@ -26,8 +26,8 @@ namespace NavSim.Tests.EditMode
         public void Velocity_IsNormalizedByMaxSpeed_InLocalFrame()
         {
             // heading 0 == facing +Z; world +Z velocity maps to local forward (index 1).
-            float[] o = ObservationBuilder.Build(new Vector3(0f, 0f, 4f), 0f, 4f, 0, 8);
-            Assert.AreEqual(1f, o[1], 1e-4f); // localVelZ == maxSpeed/maxSpeed
+            float[] o = ObservationBuilder.Build(new Vector3(0f, 0f, 4f), 0f, 8f, 0, 8);
+            Assert.AreEqual(0.5f, o[1], 1e-4f); // localVelZ == 4/maxSpeed(8)
             Assert.AreEqual(0f, o[0], 1e-4f); // localVelX
         }
 
