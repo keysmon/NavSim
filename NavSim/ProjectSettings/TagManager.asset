@@ -7,6 +7,15 @@ TagManager:
   - wall
   - goal
   - obstacle
+  - agent
+  - goal_c0
+  - goal_c1
+  - goal_c2
+  - goal_c3
+  - goal_c4
+  - goal_c5
+  - goal_c6
+  - goal_c7
   layers:
   - Default
   - TransparentFX
