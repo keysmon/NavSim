@@ -5,7 +5,8 @@ using Unity.MLAgents.Sensors;
 
 namespace NavSim.Runtime
 {
-    // 3D navigation agent: moves on the XZ ground plane, turns about the Y axis (unicycle model).
+    // Shared-policy crowd member. Moves on XZ, turns about Y (unicycle). Continuous respawn: on reaching
+    // its color goal it gets a fresh same-color goal (no EndEpisode). The arena owns count/colors/resets.
     [RequireComponent(typeof(Rigidbody))]
     public class NavAgent : Agent
     {
@@ -16,23 +17,29 @@ namespace NavSim.Runtime
 
         private Rigidbody _rb;
         private float _prevDist;
+        private int _color;
 
         public override void Initialize() => _rb = GetComponent<Rigidbody>();
 
+        public void SetColor(int color) => _color = color;
+        public int Color => _color;
+
         public override void OnEpisodeBegin()
         {
-            env.ResetEpisode(transform);
+            // Fires on MaxStep interruption, on fresh activation, and when the controller retires this
+            // agent. Skip placement in the retire case (controller removed us from the active set first).
+            if (!env.IsActive(this)) return;
+            env.PlaceForNewEpisode(this); // arena places agent + its goal clear of the live crowd
             _rb.linearVelocity = Vector3.zero;
             _rb.angularVelocity = Vector3.zero;
-            _prevDist = Vector3.Distance(transform.position, env.GoalPosition);
+            _prevDist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
         }
 
         public override void CollectObservations(VectorSensor sensor)
         {
             float heading = transform.eulerAngles.y;
-            // myColor is wired to the arena in Task 4; placeholder 0 keeps this compiling now.
             float[] obs = ObservationBuilder.Build(
-                _rb.linearVelocity, heading, maxSpeed, 0, NavEnvironment.NumColors);
+                _rb.linearVelocity, heading, maxSpeed, _color, NavEnvironment.NumColors);
             foreach (float o in obs) sensor.AddObservation(o);
         }
 
@@ -47,13 +54,24 @@ namespace NavSim.Runtime
             _rb.linearVelocity = vel;
 
             Vector3 pos = transform.position;
-            float dist = Vector3.Distance(pos, env.GoalPosition);
-            bool reached = env.ReachedGoal(pos);
+            Vector3 goal = env.GoalPositionFor(this);
+            float dist = Vector3.Distance(pos, goal);
+            bool reached = env.ReachedGoal(this);
 
-            AddReward(RewardCalculator.Step(_prevDist, dist, reached, reward));
+            // Goal-directed reward (privileged shaping) minus crowd penalty (sub-dominant, §6b).
+            float step = RewardCalculator.Step(_prevDist, dist, reached, reward);
+            var neighborDist = CrowdMath.NeighborDistances(
+                pos, env.PeerPositions(this), reward.congestionRadius);
+            float crowd = RewardCalculator.CrowdPenalty(neighborDist, reward);
+            AddReward(step - crowd);
+
+            if (reached)
+            {
+                // Continuous respawn: fresh same-color goal, NO EndEpisode.
+                env.RespawnGoal(this);
+                dist = Vector3.Distance(pos, env.GoalPositionFor(this));
+            }
             _prevDist = dist;
-
-            if (reached) EndEpisode();
         }
 
         public override void Heuristic(in ActionBuffers actionsOut)
