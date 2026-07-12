@@ -29,15 +29,6 @@ namespace NavSim.Tests.EditMode
         }
 
         [Test]
-        public void CompassWeightZero_RemovesShaping()
-        {
-            var cfg = RewardConfig.Default;
-            cfg.compassWeight = 0f;
-            float r = RewardCalculator.Step(10f, 5f, false, cfg);
-            Assert.AreEqual(-cfg.stepPenalty, r, 1e-6f);
-        }
-
-        [Test]
         public void CrowdPenalty_ZeroWhenNoNeighbors()
         {
             var cfg = RewardConfig.Default;

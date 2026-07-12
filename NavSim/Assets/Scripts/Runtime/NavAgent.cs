@@ -30,9 +30,9 @@ namespace NavSim.Runtime
         public override void CollectObservations(VectorSensor sensor)
         {
             float heading = transform.eulerAngles.y;
+            // myColor is wired to the arena in Task 4; placeholder 0 keeps this compiling now.
             float[] obs = ObservationBuilder.Build(
-                transform.position, heading, _rb.linearVelocity,
-                env.GoalPosition, maxSpeed, env.ArenaDiagonal, reward.compassWeight);
+                _rb.linearVelocity, heading, maxSpeed, 0, NavEnvironment.NumColors);
             foreach (float o in obs) sensor.AddObservation(o);
         }
 

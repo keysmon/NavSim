@@ -2,33 +2,23 @@ using UnityEngine;
 
 namespace NavSim.Runtime
 {
+    // Visual-only observations: own velocity (proprioception) + a one-hot identity of the agent's
+    // assigned goal color. NO goal bearing/range here — the agent must SEE its goal via rays.
+    // 3D on the XZ plane; headingDeg is rotation about world Y (0 deg faces +Z == transform.forward).
+    // Returns [localVelX, localVelZ, oneHot(myColor, numColors)...], length 2 + numColors.
     public static class ObservationBuilder
     {
-        // 3D on the XZ plane. headingDeg is rotation about world Y; 0 degrees faces +Z (transform.forward).
-        // Returns [localVelX, localVelZ, goalDirLocalX, goalDirLocalZ, normDistance].
-        public static float[] Build(
-            Vector3 agentPos, float headingDeg,
-            Vector3 agentVelocity, Vector3 goalPos,
-            float maxSpeed, float arenaDiagonal, float compassWeight)
+        public static float[] Build(Vector3 agentVelocity, float headingDeg, float maxSpeed,
+            int myColor, int numColors)
         {
             Quaternion toLocal = Quaternion.Euler(0f, -headingDeg, 0f);
-
             Vector3 localVel = toLocal * (agentVelocity / Mathf.Max(maxSpeed, 1e-3f));
 
-            Vector3 toGoal = goalPos - agentPos;
-            toGoal.y = 0f;
-            float dist = toGoal.magnitude;
-            Vector3 dirLocal = dist > 1e-6f ? (toLocal * toGoal.normalized) : Vector3.zero;
-            float normDist = Mathf.Clamp01(dist / Mathf.Max(arenaDiagonal, 1e-3f));
-
-            return new float[]
-            {
-                localVel.x,
-                localVel.z,
-                dirLocal.x * compassWeight,
-                dirLocal.z * compassWeight,
-                Mathf.Lerp(1f, normDist, compassWeight) // distance hidden when compass off
-            };
+            var obs = new float[2 + numColors];
+            obs[0] = localVel.x;
+            obs[1] = localVel.z;
+            if (myColor >= 0 && myColor < numColors) obs[2 + myColor] = 1f;
+            return obs;
         }
     }
 }

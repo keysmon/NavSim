@@ -11,8 +11,7 @@ namespace NavSim.Runtime
             bool reachedGoal,
             in RewardConfig cfg)
         {
-            float shaping = cfg.compassWeight * cfg.shapingScale
-                            * (prevDistanceToGoal - currDistanceToGoal);
+            float shaping = cfg.shapingScale * (prevDistanceToGoal - currDistanceToGoal);
             float reward = shaping - cfg.stepPenalty;
             if (reachedGoal) reward += cfg.goalBonus;
             return reward;

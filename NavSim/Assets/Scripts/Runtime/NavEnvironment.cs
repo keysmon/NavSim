@@ -6,6 +6,8 @@ namespace NavSim.Runtime
     // and detects reaching the goal.
     public class NavEnvironment : MonoBehaviour
     {
+        public const int NumColors = 8;
+
         [SerializeField] private Transform goal;
         [SerializeField] private float arenaHalfSize = 8f;
         [SerializeField] private float goalRadius = 1.3f;

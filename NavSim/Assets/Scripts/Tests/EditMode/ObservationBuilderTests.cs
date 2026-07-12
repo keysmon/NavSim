@@ -7,38 +7,37 @@ namespace NavSim.Tests.EditMode
     public class ObservationBuilderTests
     {
         [Test]
-        public void Build_ReturnsFiveElements()
+        public void Length_IsTwoPlusNumColors()
         {
-            float[] o = ObservationBuilder.Build(
-                Vector3.zero, 0f, Vector3.zero, new Vector3(0f, 0f, 5f), 4f, 20f, 1f);
-            Assert.AreEqual(5, o.Length);
+            float[] o = ObservationBuilder.Build(Vector3.zero, 0f, 4f, 0, 8);
+            Assert.AreEqual(10, o.Length); // 2 velocity + 8 one-hot
         }
 
         [Test]
-        public void GoalDirectlyAhead_HasPositiveForward()
+        public void OneHot_SetsOnlyMyColorIndex()
         {
-            // heading 0 deg == facing +Z. Goal on +Z should map to local forward (+Z), zero on right (X).
-            float[] o = ObservationBuilder.Build(
-                Vector3.zero, 0f, Vector3.zero, new Vector3(0f, 0f, 5f), 4f, 20f, 1f);
-            Assert.Greater(o[3], 0.9f);       // goalDirLocalZ (forward)
-            Assert.AreEqual(0f, o[2], 1e-4f); // goalDirLocalX (right)
+            float[] o = ObservationBuilder.Build(Vector3.zero, 0f, 4f, 3, 8);
+            Assert.AreEqual(1f, o[2 + 3], 1e-6f);
+            for (int c = 0; c < 8; c++)
+                if (c != 3) Assert.AreEqual(0f, o[2 + c], 1e-6f);
         }
 
         [Test]
-        public void CompassWeightZero_ZerosGoalDirection()
+        public void Velocity_IsNormalizedByMaxSpeed_InLocalFrame()
         {
-            float[] o = ObservationBuilder.Build(
-                Vector3.zero, 0f, Vector3.zero, new Vector3(0f, 0f, 5f), 4f, 20f, 0f);
-            Assert.AreEqual(0f, o[2], 1e-6f);
-            Assert.AreEqual(0f, o[3], 1e-6f);
-        }
-
-        [Test]
-        public void Velocity_IsNormalizedByMaxSpeed()
-        {
-            float[] o = ObservationBuilder.Build(
-                Vector3.zero, 0f, new Vector3(0f, 0f, 4f), new Vector3(0f, 0f, 5f), 4f, 20f, 1f);
+            // heading 0 == facing +Z; world +Z velocity maps to local forward (index 1).
+            float[] o = ObservationBuilder.Build(new Vector3(0f, 0f, 4f), 0f, 4f, 0, 8);
             Assert.AreEqual(1f, o[1], 1e-4f); // localVelZ == maxSpeed/maxSpeed
+            Assert.AreEqual(0f, o[0], 1e-4f); // localVelX
+        }
+
+        [Test]
+        public void Velocity_RotatesIntoLocalFrame()
+        {
+            // heading 90 deg (facing +X); world +X velocity should read as local forward (+Z, index 1).
+            float[] o = ObservationBuilder.Build(new Vector3(4f, 0f, 0f), 90f, 4f, 0, 8);
+            Assert.AreEqual(1f, o[1], 1e-3f);
+            Assert.AreEqual(0f, o[0], 1e-3f);
         }
     }
 }
