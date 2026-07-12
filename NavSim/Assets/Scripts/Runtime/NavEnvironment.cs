@@ -45,6 +45,10 @@ namespace NavSim.Runtime
 
         private void FixedUpdate()
         {
+            // Only the trainer (communicator on) drives active count via environment parameters. In a
+            // no-communicator build (WebGL/standalone) GetWithDefault always returns the default, so
+            // polling would revert SetActiveCount every step — gate it so the demo slider latches.
+            if (!Academy.Instance.IsCommunicatorOn) return;
             int k = ReadCeiling();
             if (k != _appliedCount) ApplyCount(k); // catches curriculum lesson advances
         }
@@ -64,7 +68,7 @@ namespace NavSim.Runtime
         {
             for (int i = 0; i < agents.Length; i++)
             {
-                if (agents[i] == null) continue;
+                if (agents[i] == null || goals[i] == null) continue; // both must be wired to participate
                 bool on = i < k;
                 bool was = _active.Contains(agents[i]);
                 if (on && !was)
@@ -72,7 +76,9 @@ namespace NavSim.Runtime
                     agents[i].SetColor(i);                 // color index == wiring slot
                     _active.Add(agents[i]);
                     if (goals[i] != null) goals[i].gameObject.SetActive(true);
-                    agents[i].gameObject.SetActive(true);  // OnEnable -> OnEpisodeBegin -> self-place
+                    agents[i].gameObject.SetActive(true);  // mid-run re-activation self-places via a
+                                                           // synchronous OnEpisodeBegin; at Start() it
+                                                           // places on Academy's first agent reset
                 }
                 else if (!on && was)
                 {
