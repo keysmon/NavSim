@@ -33,5 +33,21 @@ namespace NavSim.Tests.EditMode
             var d = CrowdMath.NeighborDistances(Vector3.zero, new List<Vector3>(), 2f);
             Assert.AreEqual(0, d.Count);
         }
+
+        [Test]
+        public void NullOthers_ReturnsEmpty()
+        {
+            var d = CrowdMath.NeighborDistances(Vector3.zero, null, 2f);
+            Assert.AreEqual(0, d.Count);
+        }
+
+        [Test]
+        public void NeighborAtExactlyMaxRadius_Excluded()
+        {
+            var self = Vector3.zero;
+            var others = new List<Vector3> { new Vector3(2f, 0f, 0f) };
+            var d = CrowdMath.NeighborDistances(self, others, 2f);
+            Assert.AreEqual(0, d.Count);
+        }
     }
 }

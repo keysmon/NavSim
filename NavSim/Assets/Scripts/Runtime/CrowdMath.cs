@@ -3,7 +3,8 @@ using UnityEngine;
 
 namespace NavSim.Runtime
 {
-    // Pure XZ-plane neighbor geometry. Unity-free math (uses Vector3 as a value type only).
+    // Pure XZ-plane neighbor geometry. No scene/MonoBehaviour coupling, so it is EditMode-testable,
+    // but it does use UnityEngine math types (Vector3/Mathf), so it is not Unity-free.
     public static class CrowdMath
     {
         // Horizontal (XZ) distances from self to each other closer than maxRadius. Vertical (y) ignored.

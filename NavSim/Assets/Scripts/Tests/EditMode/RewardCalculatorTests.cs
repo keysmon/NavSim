@@ -63,6 +63,21 @@ namespace NavSim.Tests.EditMode
         }
 
         [Test]
+        public void CrowdPenalty_NullList_ReturnsZero()
+        {
+            var cfg = RewardConfig.Default;
+            Assert.AreEqual(0f, RewardCalculator.CrowdPenalty(null, cfg), 1e-6f);
+        }
+
+        [Test]
+        public void CrowdPenalty_NeighborAtExactlyCongestionRadius_Excluded()
+        {
+            var cfg = RewardConfig.Default; // congestionRadius 2.5, collisionRadius 1.2
+            float p = RewardCalculator.CrowdPenalty(new System.Collections.Generic.List<float> { 2.5f }, cfg);
+            Assert.AreEqual(0f, p, 1e-6f);
+        }
+
+        [Test]
         public void ProgressThroughCrowd_NetsPositive()
         {
             // §6b balance constraint: a representative per-step progress while passing 2 congestion-range
