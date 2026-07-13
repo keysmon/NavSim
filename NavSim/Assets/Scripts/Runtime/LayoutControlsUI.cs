@@ -31,6 +31,10 @@ namespace NavSim.Runtime
         private void Apply()
         {
             if (_env == null) return;
+            // Difficulty slider owns arena size + obstacle density ONLY. In M4, goal visibility (ray length)
+            // is a separate axis owned by VisibilitySliderUI; this control deliberately does NOT set ray, so
+            // the two sliders stay orthogonal (dragging difficulty must not reset the visibility slider).
+            // VisibilitySliderUI establishes the visible default over NavEnvironment.Start's hidden-rung ray.
             var d = DifficultyMapper.ForLevel(_level);
             _env.SetArenaSize(d.ArenaHalfSize);
             _env.SetObstacleCount(d.MaxObstacles);
