@@ -7,10 +7,45 @@ in-browser via a Unity WebGL build with in-engine inference (Unity Sentis).
 
 ## Status
 
-M0 (pipeline smoke) in progress: proving the full toolchain end to end
-(Unity -> ML-Agents -> ONNX -> Sentis -> WebGL -> Vercel) on a single agent reaching a visible goal.
+Milestones M0-M3 complete and deployed. The full pipeline is proven end to end
+(Unity -> ML-Agents -> ONNX -> Sentis -> WebGL -> Vercel):
 
-Live demo: _(added at the end of M0)_
+- **M0** - single-agent pipeline smoke: an agent reaches a visible goal in-browser.
+- **M1** - static obstacles + collision avoidance.
+- **M2** - 2-8 shared-policy crowd with color-coded goals, a cooperative (congestion) reward, and
+  visual-only observations (no compass oracle); interactive crowd-size slider.
+- **M3** - a single collapsed difficulty curriculum (agent count x arena size x obstacle density) with a
+  held-out generalization evaluation (see below); interactive difficulty + "new layout" controls.
+
+**Live demo:** https://navsim-webgl.vercel.app
+
+Remaining: M4 (hidden-goal search + LSTM + curiosity), M5 (PPO vs MA-POCA benchmark), M6 (CI/CD).
+
+## M3 - Generalization
+
+M3 trains one shared PPO policy along a single **collapsed difficulty curriculum**: a lone `difficulty`
+parameter co-varies agent count (2->8), arena size (half 6->11), and obstacle count (0->8) *together*, so
+the curriculum advances along one monotonic diagonal through the (agents x arena x obstacles) cube. Ray
+length is pinned to the largest arena's diagonal so goals stay visible at every lesson (keeping M3 in the
+visible-goal regime, not hidden-goal search - that is M4). Training climbed all four lessons and broke
+through on the hardest 8-agent config around 3M of 5M steps.
+
+The milestone's exit criterion is **generalization**: the policy is evaluated on **held-out off-diagonal**
+configurations it never trained as a tuple - e.g. 8 agents crammed into a small arena, 2 agents alone in
+the huge arena, an untrained arena size, 2 agents in a dense obstacle field. The harness
+(`M3GeneralizationEval`, run in-engine over the trained Sentis policy) sweeps both the trained diagonal and
+the off-diagonal grid, reporting goals reached per agent and a collision proxy.
+
+![M3 generalization](training/eval/m3_generalization.png)
+
+**Result:** off-diagonal goal rates stay within the trained-diagonal range (no collapse toward zero) and
+body-overlap stays ~0 across every held-out config - the policy transfers to unseen layouts and densities.
+Near-encounter frequency rises at the densest off-diagonal configs (8 agents in the smallest arena), which
+is a *density* artifact - agents pass closer more often - not a breakdown in avoidance: overlap stays at or
+below ~0.4% and closest approach stays near body width. Absolute goal rates carry sampling noise (the
+compass-free ray-search behavior yields a low goal rate, so per-config counts are modest); the robust
+signal is the off-vs-on-diagonal comparison, which holds. Regenerate the chart with
+`training/eval/plot_generalization.py` over the harness CSV.
 
 ## Layout
 

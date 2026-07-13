@@ -1,0 +1,6 @@
+{
+  "name": "MultiAgentNav.Editor",
+  "references": ["MultiAgentNav.Runtime", "Unity.ML-Agents"],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true
+}
