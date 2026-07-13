@@ -7,37 +7,52 @@ namespace NavSim.Tests.EditMode
     public class ObservationBuilderTests
     {
         [Test]
-        public void Length_IsTwoPlusNumColors()
+        public void Build_Length_Is5()
         {
-            float[] o = ObservationBuilder.Build(Vector3.zero, 0f, 4f, 0, 8);
-            Assert.AreEqual(10, o.Length); // 2 velocity + 8 one-hot
+            var obs = ObservationBuilder.Build(Vector3.zero, 0f, 4f, true, true);
+            Assert.AreEqual(5, obs.Length);
         }
 
         [Test]
-        public void OneHot_SetsOnlyMyColorIndex()
+        public void Build_GroundedAndJumpReady_AsFlags()
         {
-            float[] o = ObservationBuilder.Build(Vector3.zero, 0f, 4f, 3, 8);
-            Assert.AreEqual(1f, o[2 + 3], 1e-6f);
-            for (int c = 0; c < 8; c++)
-                if (c != 3) Assert.AreEqual(0f, o[2 + c], 1e-6f);
+            var g = ObservationBuilder.Build(Vector3.zero, 0f, 4f, true, false);
+            Assert.AreEqual(1f, g[3], 1e-6f); // grounded
+            Assert.AreEqual(0f, g[4], 1e-6f); // jumpReady
         }
 
         [Test]
-        public void Velocity_IsNormalizedByMaxSpeed_InLocalFrame()
+        public void Build_VerticalVelocity_NormalizedByMaxSpeed()
         {
-            // heading 0 == facing +Z; world +Z velocity maps to local forward (index 1).
-            float[] o = ObservationBuilder.Build(new Vector3(0f, 0f, 4f), 0f, 8f, 0, 8);
-            Assert.AreEqual(0.5f, o[1], 1e-4f); // localVelZ == 4/maxSpeed(8)
-            Assert.AreEqual(0f, o[0], 1e-4f); // localVelX
+            // Falling registers on the local Y channel at velocity.y / maxSpeed (locks the Y scale factor).
+            var obs = ObservationBuilder.Build(new Vector3(0f, -8f, 0f), 0f, 4f, false, false);
+            Assert.AreEqual(-2f, obs[1], 1e-4f); // -8 / maxSpeed(4)
         }
 
         [Test]
-        public void Velocity_RotatesIntoLocalFrame()
+        public void Build_VerticalVelocity_InvariantUnderHeading()
         {
-            // heading 90 deg (facing +X); world +X velocity should read as local forward (+Z, index 1).
-            float[] o = ObservationBuilder.Build(new Vector3(4f, 0f, 0f), 90f, 4f, 0, 8);
-            Assert.AreEqual(1f, o[1], 1e-3f);
-            Assert.AreEqual(0f, o[0], 1e-3f);
+            // Yaw rotates only about Y, so the vertical channel must be unchanged by heading.
+            var obs = ObservationBuilder.Build(new Vector3(0f, -8f, 0f), 90f, 4f, false, false);
+            Assert.AreEqual(-2f, obs[1], 1e-4f);
+        }
+
+        [Test]
+        public void Build_ForwardVelocity_NormalizedToLocalZ()
+        {
+            // heading 0 == facing +Z; full-speed forward -> localVelZ == 1, no lateral component.
+            var obs = ObservationBuilder.Build(new Vector3(0f, 0f, 4f), 0f, 4f, true, true);
+            Assert.AreEqual(1f, obs[2], 1e-4f); // localVelZ
+            Assert.AreEqual(0f, obs[0], 1e-4f); // localVelX
+        }
+
+        [Test]
+        public void Build_Velocity_RotatesIntoLocalFrame()
+        {
+            // heading 90 deg (facing +X); world +X velocity should read as local forward (+Z, index 2).
+            var obs = ObservationBuilder.Build(new Vector3(4f, 0f, 0f), 90f, 4f, false, false);
+            Assert.AreEqual(1f, obs[2], 1e-3f); // localVelZ
+            Assert.AreEqual(0f, obs[0], 1e-3f); // localVelX
         }
     }
 }

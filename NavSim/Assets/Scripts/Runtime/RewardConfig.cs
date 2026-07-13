@@ -12,6 +12,8 @@ namespace NavSim.Runtime
         public float congestionRadius;  // broad crowding neighborhood
         public float congestionWeight;  // flat per-neighbor congestion cost
 
+        public float pitPenalty;        // cost of falling into a hazard pit (M5); "bold" start = 0.25
+
         public static RewardConfig Default => new RewardConfig
         {
             goalBonus = 1.0f,
@@ -20,7 +22,8 @@ namespace NavSim.Runtime
             collisionRadius = 1.2f,
             collisionWeight = 0.01f,
             congestionRadius = 2.5f,
-            congestionWeight = 0.002f
+            congestionWeight = 0.002f,
+            pitPenalty = 0.25f
         };
     }
 }

@@ -5,47 +5,50 @@ using Unity.MLAgents.Sensors;
 
 namespace NavSim.Runtime
 {
-    // Shared-policy crowd member. Moves on XZ, turns about Y (unicycle). Continuous respawn: on reaching
-    // its color goal it gets a fresh same-color goal (no EndEpisode). The arena owns count/colors/resets.
-    [RequireComponent(typeof(Rigidbody))]
+    // M5 single searcher on 3D terrain. CharacterController + manual gravity; hybrid action space
+    // (forward, turn continuous; jump discrete). Continuous goal respawn (no EndEpisode on reach);
+    // a pit fall is penalised then teleported to safe ground (memory + episode continue).
+    [RequireComponent(typeof(CharacterController))]
     public class NavAgent : Agent
     {
         [SerializeField] private NavEnvironment env;
         [SerializeField] private float maxSpeed = 4f;
         [SerializeField] private float maxTurnDegPerStep = 6f;
+        [SerializeField] private float jumpImpulse = 7f;
+        [SerializeField] private float gravity = -20f;
+        [SerializeField] private float terminalVelocity = -30f;
         [SerializeField] private RewardConfig reward = RewardConfig.Default;
 
-        private Rigidbody _rb;
+        private CharacterController _cc;
         private float _prevDist;
-        private int _color;
+        private float _vY; // integrated vertical velocity (LocomotionMath)
 
-        public override void Initialize() => _rb = GetComponent<Rigidbody>();
+        public override void Initialize() => _cc = GetComponent<CharacterController>();
 
-        public void SetColor(int color) => _color = color;
-        public int Color => _color;
+        // Vestigial single-learner identity. M5 has ONE learner, so color is always 0; these keep the
+        // M4-era NavEnvironment crowd machinery compiling until Task 9 rewrites it for a single learner.
+        public void SetColor(int color) { }
+        public int Color => 0;
 
-        // Re-sync the shaping baseline after the ARENA relocates this agent's goal (layout epoch, goal
-        // revalidation, arena-shrink re-home). Idempotent with the reached-block and OnEpisodeBegin, which
-        // both re-set _prevDist immediately afterward on their own paths. Advisor Finding A.
+        // Re-sync the shaping baseline after the ARENA relocates this agent's goal (goal respawn, safe
+        // respawn, lesson change). Idempotent with OnEpisodeBegin and the reached/pit blocks, which re-set
+        // _prevDist on their own paths. Advisor Finding A (M3).
         public void NotifyGoalMoved() =>
             _prevDist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
 
         public override void OnEpisodeBegin()
         {
-            // Fires on MaxStep interruption, on fresh activation, and when the controller retires this
-            // agent. Skip placement in the retire case (controller removed us from the active set first).
-            if (!env.IsActive(this)) return;
-            env.PlaceForNewEpisode(this); // arena places agent + its goal clear of the live crowd
-            _rb.linearVelocity = Vector3.zero;
-            _rb.angularVelocity = Vector3.zero;
+            env.PlaceForNewEpisode(this); // arena places agent + its goal
+            _vY = 0f;
             _prevDist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
         }
 
         public override void CollectObservations(VectorSensor sensor)
         {
-            float heading = transform.eulerAngles.y;
+            bool grounded = _cc.isGrounded;
+            // jumpReady == grounded: a jump is only launchable from the ground (no double-jump).
             float[] obs = ObservationBuilder.Build(
-                _rb.linearVelocity, heading, maxSpeed, _color, NavEnvironment.NumColors);
+                _cc.velocity, transform.eulerAngles.y, maxSpeed, grounded, grounded);
             foreach (float o in obs) sensor.AddObservation(o);
         }
 
@@ -53,30 +56,44 @@ namespace NavSim.Runtime
         {
             float forward = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
             float turn = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
+            bool jumpPressed = actions.DiscreteActions[0] == 1;
 
             transform.Rotate(0f, turn * maxTurnDegPerStep, 0f);
-            Vector3 vel = transform.forward * forward * maxSpeed;
-            vel.y = 0f;
-            _rb.linearVelocity = vel;
+
+            bool grounded = _cc.isGrounded;
+            _vY = LocomotionMath.NextVerticalVelocity(
+                _vY, grounded, jumpPressed, jumpImpulse, gravity, Time.fixedDeltaTime, terminalVelocity);
+
+            Vector3 horiz = transform.forward * forward * maxSpeed;
+            Vector3 move = new Vector3(horiz.x, _vY, horiz.z);
+            _cc.Move(move * Time.fixedDeltaTime);
 
             Vector3 pos = transform.position;
-            Vector3 goal = env.GoalPositionFor(this);
-            float dist = Vector3.Distance(pos, goal);
-            bool reached = env.ReachedGoal(this);
+            float dist = Vector3.Distance(pos, env.GoalPositionFor(this));
+            bool fellInPit = LocomotionMath.FellInPit(pos.y, env.KillPlaneY);
+            // A same-step pit fall VOIDS the reach (pit-first precedence): the fall is the outcome, so no
+            // goal bonus and no goal respawn fire. Guards against horizontal ReachedGoal firing while the
+            // agent drops through a hole directly under an (elevated) goal.
+            bool reached = !fellInPit && env.ReachedGoal(this);
+            bool goalVisible = env.GoalVisibleTo(this);
 
-            // Goal-directed reward (visibility-gated shaping) minus crowd penalty (sub-dominant, M4 §3/M2 §6b).
-            float step = RewardCalculator.Step(_prevDist, dist, reached, reward, env.VisibilityRadius);
-            var neighborDist = CrowdMath.NeighborDistances(
-                pos, env.PeerPositions(this), reward.congestionRadius);
-            float crowd = RewardCalculator.CrowdPenalty(neighborDist, reward);
-            AddReward(step - crowd);
+            float step = RewardCalculator.Step(_prevDist, dist, reached, reward, goalVisible, fellInPit);
+            var neighborDist = CrowdMath.NeighborDistances(pos, env.MoverPositions(), reward.congestionRadius);
+            float moverCost = RewardCalculator.CrowdPenalty(neighborDist, reward);
+            AddReward(step - moverCost);
 
-            if (reached)
+            if (fellInPit)
             {
-                // Continuous respawn: fresh same-color goal, NO EndEpisode.
+                env.RespawnToSafeGround(this); // nearest safe ground; memory + episode continue
+                _vY = 0f;
+                dist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
+            }
+            else if (reached)
+            {
+                // Continuous respawn: fresh goal, NO EndEpisode.
                 env.NotifyGoalReached();
                 env.RespawnGoal(this);
-                dist = Vector3.Distance(pos, env.GoalPositionFor(this));
+                dist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
             }
             _prevDist = dist;
         }
@@ -86,6 +103,8 @@ namespace NavSim.Runtime
             var ca = actionsOut.ContinuousActions;
             ca[0] = Input.GetAxis("Vertical");   // forward
             ca[1] = Input.GetAxis("Horizontal"); // turn
+            var da = actionsOut.DiscreteActions;  // bind the segment to a local (an `in` param's property
+            da[0] = Input.GetKey(KeyCode.Space) ? 1 : 0; // return is an rvalue; CS1612 forbids index-assign)
         }
     }
 }

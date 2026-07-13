@@ -37,6 +37,13 @@ namespace NavSim.Runtime
         [SerializeField] private float obstacleObstacleClearance = 2.2f;
         [SerializeField] private int layoutEpochSteps = 1500; // train-time obstacle-refresh cadence
 
+        [Header("M5 terrain search (single learner)")]
+        [Tooltip("Walls/platforms/ramps only (NOT movers) — LoS is occluded by STATIC geometry, not by transient movers.")]
+        [SerializeField] private LayerMask staticGeometryMask;
+        [SerializeField] private float eyeHeight = 1.6f;
+        [SerializeField] private float killPlaneY = -3f;   // fall below this Y == pit fall
+        [SerializeField] private float safeRespawnY = 1f;  // Task 9 upgrades safe respawn to NavMesh.SamplePosition
+
         // Maintained incrementally (add BEFORE SetActive) so an activating agent's OnEpisodeBegin sees
         // the peers already placed this round. Iterated read-only during a step (Unity is single-threaded).
         private readonly HashSet<NavAgent> _active = new HashSet<NavAgent>();
@@ -253,6 +260,39 @@ namespace NavSim.Runtime
 
         public bool IsActive(NavAgent a) => _active.Contains(a);
         public Vector3 GoalPositionFor(NavAgent a) => goals[a.Color].position;
+
+        // ---- M5 terrain-search surface (Phase-2 stubs; Task 9 wires terrain/movers/NavMesh) ----
+
+        public float KillPlaneY => killPlaneY;
+
+        // LoS gate: goal within fixed sight AND no STATIC geometry between the agent's eye and the goal.
+        // Movers are deliberately excluded (staticGeometryMask) so the nudge doesn't flicker as they pass
+        // (spec §8). With the mask unset (Nothing), Linecast never blocks -> visible whenever in range;
+        // the Walls/Platforms layers are assigned before the calibration probe (Task 14).
+        public bool GoalVisibleTo(NavAgent a)
+        {
+            Vector3 eye = a.transform.position + Vector3.up * eyeHeight;
+            Vector3 goal = GoalPositionFor(a);
+            float dist = Vector3.Distance(eye, goal);
+            bool blocked = Physics.Linecast(eye, goal, staticGeometryMask);
+            return VisibilityGate.IsGoalVisible(dist, DifficultyMapper.SightRange, lineOfSightClear: !blocked);
+        }
+
+        // Oblivious dynamic occluders (Task 10). No movers yet -> empty, so CrowdMath/mover penalty is a no-op.
+        public IReadOnlyList<Vector3> MoverPositions() => System.Array.Empty<Vector3>();
+
+        // Pit-fall recovery: teleport to safe ground, keeping episode + LSTM memory. Phase-2 stub uses a
+        // fixed safe point (never a shortcut toward the goal for a real policy is a Task-9 concern; here it
+        // just proves the fall->recover mechanism). Task 9 upgrades to NavMesh.SamplePosition nearest-safe.
+        // A CharacterController caches its position, so it must be disabled around a direct transform move.
+        public void RespawnToSafeGround(NavAgent a)
+        {
+            var cc = a.GetComponent<CharacterController>();
+            if (cc != null) cc.enabled = false;
+            a.transform.position = new Vector3(0f, safeRespawnY, 0f);
+            if (cc != null) cc.enabled = true;
+            a.NotifyGoalMoved();
+        }
 
         public bool ReachedGoal(NavAgent a) =>
             HorizontalDistance(a.transform.position, GoalPositionFor(a)) < goalRadius;

@@ -5,20 +5,25 @@ namespace NavSim.Runtime
     public static class RewardCalculator
     {
         // Pure and Unity-free so it is fully unit-testable.
+        // M5: shaping is gated on a PRECOMPUTED goalVisible (dist < sightRange AND static line-of-sight
+        // clear -> VisibilityGate), replacing M4's ray-radius proxy so a goal behind a wall is hidden even
+        // when close. Adds a pit-fall penalty. The sparse goal bonus and the pit penalty are NEVER gated.
+        // Shaping is ALSO suppressed on a pit-fall step: the falling position is garbage (Y below the floor
+        // inflates the distance), so the intended signal is the -pitPenalty alone, not a spurious gradient.
         public static float Step(
             float prevDistanceToGoal,
             float currDistanceToGoal,
             bool reachedGoal,
             in RewardConfig cfg,
-            float visibilityRadius)
+            bool goalVisible,
+            bool fellInPit)
         {
-            // Visibility-gated shaping: the privileged distance gradient is allowed only when the goal is
-            // within ray range. Hidden -> curiosity + the sparse goal bonus drive search (M4 §3).
-            float shaping = (currDistanceToGoal < visibilityRadius)
+            float shaping = (goalVisible && !fellInPit)
                 ? cfg.shapingScale * (prevDistanceToGoal - currDistanceToGoal)
                 : 0f;
             float reward = shaping - cfg.stepPenalty;
             if (reachedGoal) reward += cfg.goalBonus;
+            if (fellInPit) reward -= cfg.pitPenalty;
             return reward;
         }
 
