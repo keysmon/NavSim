@@ -16,6 +16,7 @@ TagManager:
   - goal_c5
   - goal_c6
   - goal_c7
+  - mover
   layers:
   - Default
   - TransparentFX
