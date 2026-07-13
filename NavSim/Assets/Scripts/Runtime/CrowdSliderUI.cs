@@ -12,7 +12,7 @@ namespace NavSim.Runtime
 
         private void Start()
         {
-            _env = FindFirstObjectByType<NavEnvironment>();
+            _env = FindAnyObjectByType<NavEnvironment>();
             _count = Mathf.Clamp(startCount, 2, 8);
             if (_env != null) _env.SetActiveCount(_count);
         }
