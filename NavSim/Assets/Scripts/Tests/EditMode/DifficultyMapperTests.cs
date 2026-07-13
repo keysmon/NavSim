@@ -105,6 +105,7 @@ namespace NavSim.Tests.EditMode
                 var cur = DifficultyMapper.ForSearchLevel(i);
                 Assert.GreaterOrEqual(cur.AgentCount, prev.AgentCount, $"agents L{i}");
                 Assert.GreaterOrEqual(cur.ArenaHalfSize, prev.ArenaHalfSize, $"size L{i}");
+                Assert.GreaterOrEqual(cur.MinObstacles, prev.MinObstacles, $"minObs L{i}");
                 Assert.GreaterOrEqual(cur.MaxObstacles, prev.MaxObstacles, $"obs L{i}");
             }
         }
