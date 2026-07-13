@@ -9,9 +9,14 @@ namespace NavSim.Runtime
             float prevDistanceToGoal,
             float currDistanceToGoal,
             bool reachedGoal,
-            in RewardConfig cfg)
+            in RewardConfig cfg,
+            float visibilityRadius)
         {
-            float shaping = cfg.shapingScale * (prevDistanceToGoal - currDistanceToGoal);
+            // Visibility-gated shaping: the privileged distance gradient is allowed only when the goal is
+            // within ray range. Hidden -> curiosity + the sparse goal bonus drive search (M4 §3).
+            float shaping = (currDistanceToGoal < visibilityRadius)
+                ? cfg.shapingScale * (prevDistanceToGoal - currDistanceToGoal)
+                : 0f;
             float reward = shaping - cfg.stepPenalty;
             if (reachedGoal) reward += cfg.goalBonus;
             return reward;

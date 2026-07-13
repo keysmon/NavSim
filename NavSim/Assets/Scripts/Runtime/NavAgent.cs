@@ -64,8 +64,8 @@ namespace NavSim.Runtime
             float dist = Vector3.Distance(pos, goal);
             bool reached = env.ReachedGoal(this);
 
-            // Goal-directed reward (privileged shaping) minus crowd penalty (sub-dominant, §6b).
-            float step = RewardCalculator.Step(_prevDist, dist, reached, reward);
+            // Goal-directed reward (visibility-gated shaping) minus crowd penalty (sub-dominant, M4 §3/M2 §6b).
+            float step = RewardCalculator.Step(_prevDist, dist, reached, reward, env.VisibilityRadius);
             var neighborDist = CrowdMath.NeighborDistances(
                 pos, env.PeerPositions(this), reward.congestionRadius);
             float crowd = RewardCalculator.CrowdPenalty(neighborDist, reward);
