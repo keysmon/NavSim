@@ -23,6 +23,15 @@ namespace NavSim.Runtime
         [SerializeField] private float obstacleClearance = 1.9f;
         [SerializeField] private float agentClearance = 1.6f;
 
+        [Header("Arena bounds (assign in Editor)")]
+        [SerializeField] private Transform wallNorth;  // +Z
+        [SerializeField] private Transform wallSouth;  // -Z
+        [SerializeField] private Transform wallEast;   // +X
+        [SerializeField] private Transform wallWest;   // -X
+        [SerializeField] private Transform floor;
+        [SerializeField] private float wallThickness = 0.5f;
+        [SerializeField] private float wallHeight = 1.5f;
+
         private Transform[] _obstacles;
         // Maintained incrementally (add BEFORE SetActive) so an activating agent's OnEpisodeBegin sees
         // the peers already placed this round. Iterated read-only during a step (Unity is single-threaded).
@@ -41,7 +50,61 @@ namespace NavSim.Runtime
             _obstacles = obs.ToArray();
         }
 
-        private void Start() => ApplyCount(ReadCeiling());
+        private void Start()
+        {
+            PinRayLength();
+            ApplyCount(ReadCeiling());
+        }
+
+        // Pin every agent's ray length to the LARGEST lesson's diagonal, once. Keeps goals visible at all
+        // arena sizes (the visible-goal invariant). A shorter ray would hide goals at big arenas (=M4).
+        // Belt-and-suspenders with the scene value (32); the scene value is primary since a sensor built by
+        // Agent.LazyInitialize before Start would ignore a later assignment.
+        private void PinRayLength()
+        {
+            foreach (var a in agents)
+            {
+                if (a == null) continue;
+                var sensor = a.GetComponent<Unity.MLAgents.Sensors.RayPerceptionSensorComponent3D>();
+                if (sensor != null && sensor.RayLength < DifficultyMapper.MaxArenaDiagonal)
+                    sensor.RayLength = DifficultyMapper.MaxArenaDiagonal;
+            }
+        }
+
+        // Reposition the 4 boundary walls to +/-halfSize and rescale the floor. Called on lesson change
+        // (training) and by the demo/eval setters. RandomPoint() reads arenaHalfSize, so spawning follows.
+        public void SetArenaSize(float halfSize)
+        {
+            arenaHalfSize = halfSize;
+            float span = halfSize * 2f + wallThickness;
+            if (wallNorth) { wallNorth.position = new Vector3(0f, wallHeight * 0.5f, halfSize);
+                             wallNorth.localScale = new Vector3(span, wallHeight, wallThickness); }
+            if (wallSouth) { wallSouth.position = new Vector3(0f, wallHeight * 0.5f, -halfSize);
+                             wallSouth.localScale = new Vector3(span, wallHeight, wallThickness); }
+            if (wallEast)  { wallEast.position  = new Vector3(halfSize, wallHeight * 0.5f, 0f);
+                             wallEast.localScale  = new Vector3(wallThickness, wallHeight, span); }
+            if (wallWest)  { wallWest.position  = new Vector3(-halfSize, wallHeight * 0.5f, 0f);
+                             wallWest.localScale  = new Vector3(wallThickness, wallHeight, span); }
+            if (floor) floor.localScale = new Vector3(halfSize * 2f / 10f, 1f, halfSize * 2f / 10f);
+            ClampActiveIntoBounds(); // demo/eval shrink the arena WITHOUT ResetAllActive — re-home OOB actors
+        }
+
+        // Re-place any active agent (or its stranded goal) now outside the new walls. Protects the demo
+        // (difficulty slider dragged down, L3->L0) and the eval harness — both call SetArenaSize directly,
+        // with no ResetAllActive to re-place things. Training's SetDifficulty also calls ResetAllActive, so
+        // this is belt-and-suspenders there. Iterating _active is safe (neither call mutates it).
+        private void ClampActiveIntoBounds()
+        {
+            foreach (var a in _active)
+            {
+                bool agentOob = Mathf.Abs(a.transform.position.x) > arenaHalfSize ||
+                                Mathf.Abs(a.transform.position.z) > arenaHalfSize;
+                if (agentOob) { PlaceForNewEpisode(a); continue; } // re-places agent + its goal
+                Transform g = goals[a.Color];
+                if (g != null && (Mathf.Abs(g.position.x) > arenaHalfSize || Mathf.Abs(g.position.z) > arenaHalfSize))
+                    RespawnGoal(a); // goal stranded though the agent is in-bounds
+            }
+        }
 
         private void FixedUpdate()
         {
