@@ -130,6 +130,7 @@ GameObject:
   - component: {fileID: 4759279}
   - component: {fileID: 4759278}
   - component: {fileID: 4759280}
+  - component: {fileID: 4759281}
   m_Layer: 0
   m_Name: DemoUI
   m_TagString: Untagged
@@ -178,6 +179,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: MultiAgentNav.Runtime::NavSim.Runtime.LayoutControlsUI
   startLevel: 1
+--- !u!114 &4759281
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4759277}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 240c7680f352544b3ab365756a1606f8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: MultiAgentNav.Runtime::NavSim.Runtime.VisibilitySliderUI
 --- !u!1 &14270918
 GameObject:
   m_ObjectHideFlags: 0
