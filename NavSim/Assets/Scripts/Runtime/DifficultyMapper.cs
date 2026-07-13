@@ -10,13 +10,16 @@ namespace NavSim.Runtime
         public readonly float ArenaHalfSize;
         public readonly int MinObstacles;
         public readonly int MaxObstacles;
+        public readonly float RayLength; // goal-visibility radius for this rung
 
-        public DifficultyLevel(int agentCount, float arenaHalfSize, int minObstacles, int maxObstacles)
+        public DifficultyLevel(int agentCount, float arenaHalfSize, int minObstacles, int maxObstacles,
+            float rayLength)
         {
             AgentCount = agentCount;
             ArenaHalfSize = arenaHalfSize;
             MinObstacles = minObstacles;
             MaxObstacles = maxObstacles;
+            RayLength = rayLength;
         }
     }
 
@@ -36,13 +39,26 @@ namespace NavSim.Runtime
         // with few obstacles/agents, which structurally prevents the ClearPoint infeasibility corner.
         private static readonly DifficultyLevel[] Levels =
         {
-            new DifficultyLevel(2, 6f, 0, 1),
-            new DifficultyLevel(4, 8f, 2, 3),
-            new DifficultyLevel(6, 10f, 4, 5),
-            new DifficultyLevel(8, MaxArenaHalfSize, 6, 8),
+            new DifficultyLevel(2, 6f, 0, 1, MaxArenaDiagonal),
+            new DifficultyLevel(4, 8f, 2, 3, MaxArenaDiagonal),
+            new DifficultyLevel(6, 10f, 4, 5, MaxArenaDiagonal),
+            new DifficultyLevel(8, MaxArenaHalfSize, 6, 8, MaxArenaDiagonal),
+        };
+
+        // M4 (hidden-goal search) rungs: visibility fades from full diagonal down to ~0.2x (hidden),
+        // while agent count / arena / obstacle density ramp up. Fractions recalibrated off the probe.
+        private static readonly DifficultyLevel[] SearchLevels =
+        {
+            new DifficultyLevel(2, 8f,  0, 1, MaxArenaDiagonal),          // visible warmup
+            new DifficultyLevel(4, 9f,  2, 3, 0.60f * MaxArenaDiagonal),
+            new DifficultyLevel(6, 10f, 4, 5, 0.35f * MaxArenaDiagonal),
+            new DifficultyLevel(8, MaxArenaHalfSize, 6, 8, 0.20f * MaxArenaDiagonal), // hidden
         };
 
         public static DifficultyLevel ForLevel(int level) =>
             Levels[Mathf.Clamp(level, 0, NumLevels - 1)];
+
+        public static DifficultyLevel ForSearchLevel(int level) =>
+            SearchLevels[Mathf.Clamp(level, 0, NumLevels - 1)];
     }
 }
