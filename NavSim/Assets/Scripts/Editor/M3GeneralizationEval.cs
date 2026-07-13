@@ -35,7 +35,7 @@ public static class M3GeneralizationEval
     {
         if (!Application.isPlaying)
         {
-            Debug.LogError("[M3Eval] Enter Play mode first (the eval needs a running Academy + Sentis policy).");
+            Debug.LogError("[M3Eval] Enter Play mode first (the eval needs a running Academy + inference policy).");
             return;
         }
         var env = Object.FindAnyObjectByType<NavEnvironment>();

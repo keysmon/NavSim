@@ -37,7 +37,7 @@ public static class M4SearchEval
     {
         if (!Application.isPlaying)
         {
-            Debug.LogError("[M4Eval] Enter Play mode first (needs a running Academy + Sentis policy).");
+            Debug.LogError("[M4Eval] Enter Play mode first (needs a running Academy + inference policy).");
             return;
         }
         var env = Object.FindAnyObjectByType<NavEnvironment>();
