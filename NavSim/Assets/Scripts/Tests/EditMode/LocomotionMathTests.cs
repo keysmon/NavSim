@@ -9,8 +9,7 @@ public class LocomotionMathTests
     public void Grounded_NoJump_RestsAtSmallNegative() // stays pinned to ground, not accumulating
     {
         float v = LocomotionMath.NextVerticalVelocity(-5f, true, false, JUMP, G, DT, TERM);
-        Assert.LessOrEqual(v, 0f);
-        Assert.GreaterOrEqual(v, -1f); // clamped near zero when grounded
+        Assert.AreEqual(-1f, v, 1e-4f);
     }
 
     [Test]
@@ -38,7 +37,7 @@ public class LocomotionMathTests
     public void Airborne_ClampedToTerminalVelocity()
     {
         float v = LocomotionMath.NextVerticalVelocity(-29.9f, false, false, JUMP, G, DT, TERM);
-        Assert.GreaterOrEqual(v, TERM);
+        Assert.AreEqual(TERM, v, 1e-4f);
     }
 
     [Test]
@@ -46,5 +45,6 @@ public class LocomotionMathTests
     {
         Assert.IsTrue(LocomotionMath.FellInPit(-6f, -5f));
         Assert.IsFalse(LocomotionMath.FellInPit(0.5f, -5f));
+        Assert.IsFalse(LocomotionMath.FellInPit(-5f, -5f)); // exact plane = NOT fallen (locks strict <)
     }
 }
