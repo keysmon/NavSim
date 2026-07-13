@@ -25,9 +25,10 @@ behaviors:
 
 # Single COLLAPSED difficulty curriculum: one lesson index co-varies agents + arena size + obstacle
 # count (NavEnvironment.SetDifficulty via DifficultyMapper). Parallel curricula are forbidden (they
-# couple on the shared reward). Thresholds are PLACEHOLDERS -> recalibrate off a probe (Task 5); a
-# collapsed ladder dips deeper per transition than M2's single-axis bumps. Final lesson has no
-# threshold, so it trains to max_steps.
+# couple on the shared reward). Thresholds CALIBRATED from a 400k-step probe: L0 baseline ~-2.7 (no
+# goals), climbs to ~-1.07 by 400k still rising. A collapsed ladder dips deeper per transition than
+# M2's single-axis bumps, so L1/L2 thresholds are set leniently (biased to advance -> reach L3, which
+# has no threshold and trains to max_steps). If a lesson stalls below its threshold, lower it.
 environment_parameters:
   difficulty:
     curriculum:
@@ -37,7 +38,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.0     # PLACEHOLDER
+          threshold: -1.2
         value: 0.0
       - name: L1_4agents_medium
         completion_criteria:
@@ -45,7 +46,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.0     # PLACEHOLDER
+          threshold: -1.8
         value: 1.0
       - name: L2_6agents_large
         completion_criteria:
@@ -53,7 +54,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.0     # PLACEHOLDER
+          threshold: -2.2
         value: 2.0
       - name: L3_8agents_max
         value: 3.0
