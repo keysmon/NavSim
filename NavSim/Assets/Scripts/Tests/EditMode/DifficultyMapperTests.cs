@@ -115,5 +115,66 @@ namespace NavSim.Tests.EditMode
         {
             Assert.AreEqual(DifficultyMapper.MaxArenaDiagonal, DifficultyMapper.ForLevel(3).RayLength, 1e-3f);
         }
+
+        // --- M5 terrain-difficulty ladder: structure ramps, fixed arena/sight ---
+
+        [Test]
+        public void Terrain_L0_IsOpenFlatWarmup()
+        {
+            var l = DifficultyMapper.ForTerrainLevel(0);
+            Assert.AreEqual(0, l.Walls);
+            Assert.AreEqual(0, l.Platforms);
+            Assert.AreEqual(0, l.Pits);
+            Assert.AreEqual(0, l.Movers);
+            Assert.IsFalse(l.GoalElevated);
+        }
+
+        [Test]
+        public void Terrain_L3_IsHiddenElevatedCrowdedWithPits()
+        {
+            var l = DifficultyMapper.ForTerrainLevel(3);
+            Assert.Greater(l.Walls, 0);
+            Assert.Greater(l.Platforms, 0);
+            Assert.Greater(l.Pits, 0);
+            Assert.AreEqual(4, l.Movers);
+            Assert.IsTrue(l.GoalElevated);
+        }
+
+        [Test]
+        public void Terrain_PitsFirstAppearAtL2()
+        {
+            Assert.AreEqual(0, DifficultyMapper.ForTerrainLevel(0).Pits);
+            Assert.AreEqual(0, DifficultyMapper.ForTerrainLevel(1).Pits);
+            Assert.Greater(DifficultyMapper.ForTerrainLevel(2).Pits, 0);
+        }
+
+        [Test]
+        public void Terrain_MoversRampMonotonic()
+        {
+            int[] expected = { 0, 2, 3, 4 };
+            for (int i = 0; i < DifficultyMapper.NumLevels; i++)
+                Assert.AreEqual(expected[i], DifficultyMapper.ForTerrainLevel(i).Movers, $"movers L{i}");
+        }
+
+        [Test]
+        public void Terrain_StructureMonotonicNonDecreasing()
+        {
+            for (int i = 1; i < DifficultyMapper.NumLevels; i++)
+            {
+                var prev = DifficultyMapper.ForTerrainLevel(i - 1);
+                var cur = DifficultyMapper.ForTerrainLevel(i);
+                Assert.GreaterOrEqual(cur.Walls, prev.Walls, $"walls L{i}");
+                Assert.GreaterOrEqual(cur.Platforms, prev.Platforms, $"platforms L{i}");
+                Assert.GreaterOrEqual(cur.Pits, prev.Pits, $"pits L{i}");
+                Assert.GreaterOrEqual(cur.Movers, prev.Movers, $"movers L{i}");
+            }
+        }
+
+        [Test]
+        public void Terrain_FixedSightAndArena()
+        {
+            Assert.AreEqual(15f, DifficultyMapper.SightRange, 1e-4f);
+            Assert.AreEqual(11f, DifficultyMapper.M5ArenaHalf, 1e-4f);
+        }
     }
 }

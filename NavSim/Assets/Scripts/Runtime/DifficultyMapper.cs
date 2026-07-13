@@ -25,6 +25,22 @@ namespace NavSim.Runtime
         }
     }
 
+    // One M5 terrain-difficulty rung. Single learner, FIXED arena + sight; the STRUCTURE ramps
+    // (walls -> platforms -> pits + movers). GoalElevated allows the goal to spawn on a platform.
+    public readonly struct TerrainLevel
+    {
+        public readonly int Walls;
+        public readonly int Platforms;
+        public readonly int Pits;
+        public readonly int Movers;
+        public readonly bool GoalElevated;
+
+        public TerrainLevel(int walls, int platforms, int pits, int movers, bool goalElevated)
+        {
+            Walls = walls; Platforms = platforms; Pits = pits; Movers = movers; GoalElevated = goalElevated;
+        }
+    }
+
     // Pure map: difficulty level -> environment configuration. Unity-math-using but scene-free, so
     // EditMode-testable. The training poll, the eval harness, and the demo all resolve configs through
     // here (or through the independent setters it feeds). Two ladders: ForLevel (M3, ray pinned to
@@ -33,6 +49,9 @@ namespace NavSim.Runtime
     {
         public const int NumLevels = 4;
         public const float MaxArenaHalfSize = 11f; // == the level-3 arena; ray length keys off this
+
+        public const float SightRange = 15f;   // fixed "flashlight" reach (~half the arena diagonal)
+        public const float M5ArenaHalf = 11f;  // fixed arena (structure ramps, not size)
 
         // The fully-visible reference: the largest arena's diagonal. M3 pins every rung's ray length here
         // so goals stay visible; M4's search ladder starts here (L0) and fades below it to hide the goal.
@@ -63,5 +82,17 @@ namespace NavSim.Runtime
 
         public static DifficultyLevel ForSearchLevel(int level) =>
             SearchLevels[Mathf.Clamp(level, 0, NumLevels - 1)];
+
+        // L0 open/flat warmup -> L3 hidden + elevated + crowded + pits. Every axis monotonic non-decreasing.
+        private static readonly TerrainLevel[] TerrainLevels =
+        {
+            new TerrainLevel(0, 0, 0, 0, false), // L0: goal in the open, flat
+            new TerrainLevel(2, 0, 0, 2, false), // L1: goal behind occluding walls
+            new TerrainLevel(3, 1, 2, 3, true),  // L2: goal on a ramp-reachable platform + pits
+            new TerrainLevel(4, 2, 3, 4, true),  // L3: hidden, elevated, crowded, more pits
+        };
+
+        public static TerrainLevel ForTerrainLevel(int level) =>
+            TerrainLevels[Mathf.Clamp(level, 0, NumLevels - 1)];
     }
 }
