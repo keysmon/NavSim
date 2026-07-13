@@ -46,6 +46,11 @@ namespace NavSim.Runtime
         private int _obstacleTarget;                 // how many pool members to activate this layout
         private int _minObstacles, _maxObstacles;    // per-lesson obstacle-count band
         private int _epochStep;                      // arena-level step counter for the layout epoch
+        private float _currentRayLength = DifficultyMapper.MaxArenaDiagonal; // safe default before SetDifficulty
+
+        // Current goal-visibility radius (== the ray length set for this lesson). NavAgent reads this to
+        // gate its distance-shaping reward: shaping applies only when the goal is within this radius (M4 §3).
+        public float VisibilityRadius => _currentRayLength;
 
         public int GoalsReachedTotal { get; private set; }
         public void NotifyGoalReached() => GoalsReachedTotal++;
@@ -55,22 +60,21 @@ namespace NavSim.Runtime
 
         private void Start()
         {
-            PinRayLength();
-            SetDifficulty(ReadDifficulty()); // no communicator -> default (hardest) level; demo overrides
+            SetDifficulty(ReadDifficulty()); // sets count, arena, obstacles AND ray length (visibility) per rung
         }
 
-        // Pin every agent's ray length to the LARGEST lesson's diagonal, once. Keeps goals visible at all
-        // arena sizes (the visible-goal invariant). A shorter ray would hide goals at big arenas (=M4).
-        // Belt-and-suspenders with the scene value (32); the scene value is primary since a sensor built by
-        // Agent.LazyInitialize before Start would ignore a later assignment.
-        private void PinRayLength()
+        // Set every agent's ray-perception length (== goal-visibility radius) for this lesson. The public
+        // property setter calls UpdateSensor() -> SetRayPerceptionInput (unconditional reassign), so the
+        // change takes effect on the next perceive. This is the M4 visibility axis; it supersedes M3's
+        // one-time PinRayLength (which pinned to the max diagonal to keep the goal always visible).
+        public void SetRayLength(float len)
         {
+            _currentRayLength = len;
             foreach (var a in agents)
             {
                 if (a == null) continue;
                 var sensor = a.GetComponent<Unity.MLAgents.Sensors.RayPerceptionSensorComponent3D>();
-                if (sensor != null && sensor.RayLength < DifficultyMapper.MaxArenaDiagonal)
-                    sensor.RayLength = DifficultyMapper.MaxArenaDiagonal;
+                if (sensor != null) sensor.RayLength = len;
             }
         }
 
@@ -134,8 +138,9 @@ namespace NavSim.Runtime
         // and reset all active agents so any left outside a shrunk arena re-place inside the new bounds.
         public void SetDifficulty(int level)
         {
-            var d = DifficultyMapper.ForLevel(level);
+            var d = DifficultyMapper.ForSearchLevel(level); // M4 search ladder (was ForLevel)
             SetArenaSize(d.ArenaHalfSize);
+            SetRayLength(d.RayLength);                       // M4: visibility is a curriculum axis
             _minObstacles = d.MinObstacles; _maxObstacles = d.MaxObstacles;
             ApplyCount(d.AgentCount);
             RollObstacleCountAndRegenerate();
