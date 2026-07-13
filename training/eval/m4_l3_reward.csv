@@ -1,0 +1,5 @@
+arm,mean_l3_reward,se_within_run,n_summaries
+m4_primary,1.604,0.022,131
+m4_nolstm,1.677,0.021,131
+m4_nocuriosity,1.700,0.016,131
+m4_baseline,1.397,0.016,131
