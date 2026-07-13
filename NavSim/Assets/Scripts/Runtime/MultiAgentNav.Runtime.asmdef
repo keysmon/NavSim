@@ -1,6 +1,6 @@
 {
   "name": "MultiAgentNav.Runtime",
-  "references": ["Unity.ML-Agents"],
+  "references": ["Unity.ML-Agents", "Unity.AI.Navigation"],
   "includePlatforms": [],
   "excludePlatforms": []
 }
