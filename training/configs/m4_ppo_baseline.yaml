@@ -1,0 +1,58 @@
+# M4 ablation arm: BASELINE — plain PPO, NO LSTM + NO curiosity (extrinsic only, feedforward). Identical to
+# m4_ppo.yaml except both the network_settings.memory block and the reward_signals.curiosity block are
+# removed. The floor of the ablation matrix: no memory, no exploration drive, only visibility-gated shaping
+# + sparse goal bonus. Expected to do worst on the hidden rung.
+behaviors:
+  NavAgent:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 2
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    keep_checkpoints: 10
+    max_steps: 5000000
+    time_horizon: 64
+    summary_freq: 20000
+
+environment_parameters:
+  difficulty:
+    curriculum:
+      - name: L0_visible_warmup
+        completion_criteria:
+          measure: reward
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: -1.0
+        value: 0.0
+      - name: L1_half_visible
+        completion_criteria:
+          measure: reward
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: -1.8
+        value: 1.0
+      - name: L2_mostly_hidden
+        completion_criteria:
+          measure: reward
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: -2.4
+        value: 2.0
+      - name: L3_hidden
+        value: 3.0

@@ -1,0 +1,68 @@
+behaviors:
+  NavAgent:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048       # divisible by sequence_length (64) -> 32
+      buffer_size: 20480     # divisible by sequence_length (64) -> 320
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 2
+      memory:
+        memory_size: 128     # LSTM hidden state (M4: remember where the goal was last seen)
+        sequence_length: 64
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+      curiosity:             # ICM intrinsic drive: explore the arena while the goal is hidden
+        gamma: 0.99
+        strength: 0.02       # sub-dominant to extrinsic; recalibrate off the probe
+        learning_rate: 3.0e-4
+        network_settings:
+          hidden_units: 256
+    keep_checkpoints: 10
+    max_steps: 5000000
+    time_horizon: 64
+    summary_freq: 20000
+
+# Collapsed VISIBILITY-fade curriculum: difficulty 0..3 -> NavEnvironment.SetDifficulty -> ForSearchLevel
+# rung (agents + arena + obstacles ramp up while ray length / goal visibility fades from 1.0x -> 0.2x of
+# the arena diagonal). Thresholds below are PLACEHOLDERS to recalibrate from the 400k probe (plan Task 6
+# Step 4). Curiosity inflates early reward, so verify the curriculum measure reads EXTRINSIC reward before
+# trusting these (plan Task 6 Step 5). L3 has no threshold (trains to max_steps).
+environment_parameters:
+  difficulty:
+    curriculum:
+      - name: L0_visible_warmup
+        completion_criteria:
+          measure: reward
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: -1.0     # recalibrate off probe
+        value: 0.0
+      - name: L1_half_visible
+        completion_criteria:
+          measure: reward
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: -1.8     # recalibrate off probe
+        value: 1.0
+      - name: L2_mostly_hidden
+        completion_criteria:
+          measure: reward
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: -2.4     # recalibrate off probe
+        value: 2.0
+      - name: L3_hidden
+        value: 3.0
