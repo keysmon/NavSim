@@ -66,5 +66,54 @@ namespace NavSim.Tests.EditMode
             // Pool is 8; hardest lesson must not ask for more obstacles than the pool.
             Assert.LessOrEqual(DifficultyMapper.ForLevel(3).MaxObstacles, 8);
         }
+
+        // --- M4 search curriculum: ray length (goal visibility) is a first-class fading axis ---
+
+        [Test]
+        public void SearchLevel0_IsFullyVisible()
+        {
+            var l = DifficultyMapper.ForSearchLevel(0);
+            Assert.AreEqual(2, l.AgentCount);
+            Assert.AreEqual(8f, l.ArenaHalfSize, 1e-4f);
+            Assert.AreEqual(DifficultyMapper.MaxArenaDiagonal, l.RayLength, 1e-3f); // goal visible everywhere
+        }
+
+        [Test]
+        public void SearchLevel3_HidesTheGoal()
+        {
+            var l = DifficultyMapper.ForSearchLevel(3);
+            Assert.AreEqual(8, l.AgentCount);
+            Assert.AreEqual(11f, l.ArenaHalfSize, 1e-4f);
+            // ray far shorter than the arena diagonal -> goal hidden across most of the arena
+            Assert.Less(l.RayLength, DifficultyMapper.MaxArenaDiagonal * 0.5f);
+        }
+
+        [Test]
+        public void SearchLadder_RayLengthMonotonicNonIncreasing()
+        {
+            for (int i = 1; i < DifficultyMapper.NumLevels; i++)
+                Assert.LessOrEqual(DifficultyMapper.ForSearchLevel(i).RayLength,
+                                   DifficultyMapper.ForSearchLevel(i - 1).RayLength, $"ray L{i}");
+        }
+
+        [Test]
+        public void SearchLadder_OtherAxesMonotonicNonDecreasing()
+        {
+            for (int i = 1; i < DifficultyMapper.NumLevels; i++)
+            {
+                var prev = DifficultyMapper.ForSearchLevel(i - 1);
+                var cur = DifficultyMapper.ForSearchLevel(i);
+                Assert.GreaterOrEqual(cur.AgentCount, prev.AgentCount, $"agents L{i}");
+                Assert.GreaterOrEqual(cur.ArenaHalfSize, prev.ArenaHalfSize, $"size L{i}");
+                Assert.GreaterOrEqual(cur.MinObstacles, prev.MinObstacles, $"minObs L{i}");
+                Assert.GreaterOrEqual(cur.MaxObstacles, prev.MaxObstacles, $"obs L{i}");
+            }
+        }
+
+        [Test]
+        public void ForLevel3_KeepsMaxDiagonalRay() // M3 rungs stay visible (reproducibility)
+        {
+            Assert.AreEqual(DifficultyMapper.MaxArenaDiagonal, DifficultyMapper.ForLevel(3).RayLength, 1e-3f);
+        }
     }
 }

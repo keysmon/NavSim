@@ -9,7 +9,7 @@ namespace NavSim.Tests.EditMode
         public void ProgressTowardGoal_YieldsPositiveShaping()
         {
             var cfg = RewardConfig.Default; // shapingScale 0.05, stepPenalty 0.001
-            float r = RewardCalculator.Step(10f, 8f, false, cfg);
+            float r = RewardCalculator.Step(10f, 8f, false, cfg, float.MaxValue);
             Assert.AreEqual(2f * 0.05f - 0.001f, r, 1e-5f);
         }
 
@@ -17,14 +17,14 @@ namespace NavSim.Tests.EditMode
         public void MovingAway_YieldsNegativeReward()
         {
             var cfg = RewardConfig.Default;
-            Assert.Less(RewardCalculator.Step(8f, 10f, false, cfg), 0f);
+            Assert.Less(RewardCalculator.Step(8f, 10f, false, cfg, float.MaxValue), 0f);
         }
 
         [Test]
         public void ReachingGoal_AddsBonus()
         {
             var cfg = RewardConfig.Default;
-            float r = RewardCalculator.Step(1f, 0f, true, cfg);
+            float r = RewardCalculator.Step(1f, 0f, true, cfg, float.MaxValue);
             Assert.Greater(r, cfg.goalBonus - 0.1f);
         }
 
@@ -78,10 +78,41 @@ namespace NavSim.Tests.EditMode
             // per-step progress; if it is materially below this, lower collision/congestion WEIGHTS
             // (not this constant) so the sub-dominance guarantee holds at the real progress.
             float representativeProgress = 0.3f;
-            float step = RewardCalculator.Step(10f, 10f - representativeProgress, false, cfg);
+            float step = RewardCalculator.Step(10f, 10f - representativeProgress, false, cfg, float.MaxValue);
             float crowd = RewardCalculator.CrowdPenalty(
                 new System.Collections.Generic.List<float> { 1.8f, 2.0f }, cfg); // 2 congestion-range neighbors
             Assert.Greater(step - crowd, 0f);
+        }
+
+        // --- M4 visibility gate: privileged distance shaping applies only when the goal is in ray range ---
+
+        [Test]
+        public void HiddenGoal_NoShaping()
+        {
+            var cfg = RewardConfig.Default;
+            // curr 18 >= visibilityRadius 10 -> goal hidden -> shaping suppressed, only step penalty
+            float r = RewardCalculator.Step(20f, 18f, false, cfg, 10f);
+            Assert.AreEqual(-cfg.stepPenalty, r, 1e-6f);
+        }
+
+        [Test]
+        public void VisibleGoal_KeepsShaping()
+        {
+            var cfg = RewardConfig.Default;
+            // curr 6 < visibilityRadius 10 -> visible -> full shaping
+            float r = RewardCalculator.Step(8f, 6f, false, cfg, 10f);
+            Assert.AreEqual(cfg.shapingScale * 2f - cfg.stepPenalty, r, 1e-5f);
+        }
+
+        [Test]
+        public void ReachedGoal_BonusNotGatedByVisibility()
+        {
+            var cfg = RewardConfig.Default;
+            // Goal HIDDEN (currDist 5 >= radius 1) so shaping is gated OFF; the reach bonus must STILL fire.
+            // prev==curr keeps the shaping delta zero regardless, isolating the bonus. Fails iff the bonus
+            // is ever moved inside the visibility gate.
+            float r = RewardCalculator.Step(5f, 5f, true, cfg, 1f);
+            Assert.AreEqual(cfg.goalBonus - cfg.stepPenalty, r, 1e-6f); // 1.0 - 0.001 = 0.999
         }
     }
 }

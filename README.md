@@ -7,7 +7,7 @@ in-browser via a Unity WebGL build with in-engine inference (Unity Sentis).
 
 ## Status
 
-Milestones M0-M3 complete and deployed. The full pipeline is proven end to end
+Milestones M0-M4 complete. The full pipeline is proven end to end
 (Unity -> ML-Agents -> ONNX -> Sentis -> WebGL -> Vercel):
 
 - **M0** - single-agent pipeline smoke: an agent reaches a visible goal in-browser.
@@ -16,10 +16,13 @@ Milestones M0-M3 complete and deployed. The full pipeline is proven end to end
   visual-only observations (no compass oracle); interactive crowd-size slider.
 - **M3** - a single collapsed difficulty curriculum (agent count x arena size x obstacle density) with a
   held-out generalization evaluation (see below); interactive difficulty + "new layout" controls.
+- **M4** - hidden-goal search: ray length becomes a curriculum axis that fades from visible to hidden, the
+  distance-shaping reward is gated on visibility, and the policy gains an LSTM + ICM curiosity; a 4-arm
+  ablation (see below) with an interactive goal-visibility slider.
 
 **Live demo:** https://navsim-webgl.vercel.app
 
-Remaining: M4 (hidden-goal search + LSTM + curiosity), M5 (PPO vs MA-POCA benchmark), M6 (CI/CD).
+Remaining: M5 (PPO vs MA-POCA benchmark), M6 (CI/CD).
 
 ## M3 - Generalization
 
@@ -46,6 +49,41 @@ below ~0.4% and closest approach stays near body width. Absolute goal rates carr
 compass-free ray-search behavior yields a low goal rate, so per-config counts are modest); the robust
 signal is the off-vs-on-diagonal comparison, which holds. Regenerate the chart with
 `training/eval/plot_generalization.py` over the harness CSV.
+
+## M4 - Pure Search (Hidden Goals + LSTM + Curiosity)
+
+M4 crosses M3's explicit boundary. M3 pinned the ray length to the max arena diagonal so the goal was
+visible everywhere; M4 unpins it and **fades it along the curriculum** (1.0x -> 0.6x -> 0.35x -> 0.2x of the
+diagonal), so on the top rung the goal is visible only within a short radius and the agent must **search**.
+The privileged distance-shaping reward is **visibility-gated** - it guides the agent only while a ray could
+reach the goal; while the goal is hidden, an **LSTM** (memory) and an **ICM curiosity** intrinsic reward are
+the only drives. Room geometry (walls, obstacles, peers) stays ray-visible, so the observation contract is
+unchanged from M3. Training uses a deterministic **progress-based** curriculum (visible warmup for the first
+15% of steps, then two intermediate rungs, then ~2.75M steps on the hidden rung) - reward-thresholded
+lessons proved unusable because the per-episode reward is too noisy to gate on (a probe finding).
+
+**The policy learns hidden-goal search.** On the hidden rung the primary (LSTM + curiosity) climbs from a
+cold-start reward of ~-2.7 (reaching almost no goals) to ~+1.6 (reaching goals faster than the step penalty
+bleeds), and in the in-engine eval it reaches goals at every visibility and keeps body-overlap at exactly 0.
+
+The exit criterion is an **ablation**: the same env + curriculum trained four ways (LSTM+curiosity /
+LSTM-only / curiosity-only / neither) and compared on the hidden rung.
+
+![M4 ablation](training/eval/m4_search.png)
+
+**Result (reported honestly).** The ablation is **inconclusive**. Within these runs the plain-PPO baseline
+(no LSTM, no curiosity) is stably the weakest on the hidden rung (~1.40 vs ~1.60-1.70 for the three arms
+that have at least one mechanism), but the three mechanism arms are **clustered within noise** and the
+primary is not the best of them - so there is no clean "LSTM and curiosity are each necessary" story. Two
+honest limits: (1) **n = 1 training seed per arm**, so no difference - including the baseline gap - can be
+attributed to the mechanism rather than seed/initialization variance; (2) the eval's absolute reach rate is
+low and *non-monotonic* in visibility (a compass-free-search + observation-clutter artifact), so it is shown
+as exploratory, not as the headline. The most likely reading is that at 0.2x ray in a 22x22 arena the
+"hidden" regime is still **solvable by reactive local search** - the agent bumps around ray-visible
+structure and stumbles onto goals often enough that memory and curiosity are not *forced* to matter. A
+sharper test would shorten the ray further, enlarge the arena, or occlude the goal behind obstacles, and run
+multiple seeds. Regenerate with `Tools/NavSim/Run M4 Search Eval` (writes `m4_search.csv`) and
+`training/eval/plot_m4_search.py` (reads that plus the per-arm `m4_l3_reward.csv`).
 
 ## Layout
 

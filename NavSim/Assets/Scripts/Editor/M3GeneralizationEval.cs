@@ -10,7 +10,7 @@ using NavSim.Runtime;
 // USAGE: assign the trained NavAgent.onnx (Behaviour Type = Default, Inference Device = Burst), ENTER PLAY
 // MODE, then run Tools/NavSim/Run M3 Generalization Eval (or call M3GeneralizationEval.Run()).
 //
-// It drives the trained Sentis policy over a grid of configs through the arena's independent setters
+// It drives the trained inference policy over a grid of configs through the arena's independent setters
 // (SetArenaSize/SetActiveCount/SetObstacleCount) and manual Academy steps -- the same interactive path
 // used to produce the committed CSV. "diag-*" rows are configs the collapsed difficulty ladder trained as
 // a tuple; "off-*" rows are held-out combinations it never trained together = the real generalization test.
@@ -35,12 +35,17 @@ public static class M3GeneralizationEval
     {
         if (!Application.isPlaying)
         {
-            Debug.LogError("[M3Eval] Enter Play mode first (the eval needs a running Academy + Sentis policy).");
+            Debug.LogError("[M3Eval] Enter Play mode first (the eval needs a running Academy + inference policy).");
             return;
         }
         var env = Object.FindAnyObjectByType<NavEnvironment>();
         if (env == null) { Debug.LogError("[M3Eval] No NavEnvironment in the active scene."); return; }
         Physics.simulationMode = SimulationMode.Script;
+        // M4 made ray length a per-lesson faded axis and retired PinRayLength, so NavEnvironment.Start now
+        // defaults to the hidden rung's short ray. This M3 artifact assumes the visible-goal regime, so pin
+        // ray back to the max diagonal here (it drives arena/count/obstacles per config, never a lesson) —
+        // keeps m3_generalization.csv reproducible from HEAD.
+        env.SetRayLength(DifficultyMapper.MaxArenaDiagonal);
 
         var sb = new StringBuilder(
             "tag,agents,half,obstacles,goals_per_agent_per_1k,near_frac,overlap_frac,min_approach,fallbacks\n");
