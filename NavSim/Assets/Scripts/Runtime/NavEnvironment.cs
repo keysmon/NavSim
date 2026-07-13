@@ -6,9 +6,9 @@ namespace NavSim.Runtime
 {
     // Self-contained multi-agent arena on the XZ plane. Owns up to NumColors agents and one goal per
     // color (slot index == color). Agents have a FINITE MaxStep and self-place in OnEpisodeBegin; within
-    // an episode they respawn goals continuously (no EndEpisode on reach). Active count is curriculum-
-    // driven (num_agents) at train time and slider-driven in WebGL; this controller activates/deactivates
-    // only the DELTA when the count changes. Plain PPO — no SimpleMultiAgentGroup.
+    // an episode they respawn goals continuously (no EndEpisode on reach). A single collapsed `difficulty`
+    // curriculum co-varies agent count + arena size + obstacle count at train time (DifficultyMapper);
+    // the demo/eval drive those axes directly via independent setters. Plain PPO — no SimpleMultiAgentGroup.
     public class NavEnvironment : MonoBehaviour
     {
         public const int NumColors = 8;
@@ -32,28 +32,31 @@ namespace NavSim.Runtime
         [SerializeField] private float wallThickness = 0.5f;
         [SerializeField] private float wallHeight = 1.5f;
 
-        private Transform[] _obstacles;
+        [Header("Obstacle pool (assign Obstacle_0..7; index-agnostic)")]
+        [SerializeField] private Transform[] obstaclePool = new Transform[NumColors];
+        [SerializeField] private float obstacleObstacleClearance = 2.2f;
+        [SerializeField] private int layoutEpochSteps = 1500; // train-time obstacle-refresh cadence
+
         // Maintained incrementally (add BEFORE SetActive) so an activating agent's OnEpisodeBegin sees
         // the peers already placed this round. Iterated read-only during a step (Unity is single-threaded).
         private readonly HashSet<NavAgent> _active = new HashSet<NavAgent>();
         private int _appliedCount = -1;
+        private int _appliedDifficulty = -1;
+
+        private int _obstacleTarget;                 // how many pool members to activate this layout
+        private int _minObstacles, _maxObstacles;    // per-lesson obstacle-count band
+        private int _epochStep;                      // arena-level step counter for the layout epoch
+
+        public int GoalsReachedTotal { get; private set; }
+        public void NotifyGoalReached() => GoalsReachedTotal++;
+        public int PlacementFallbacks { get; private set; } // ClearPoint retry-exhaustions (eval honesty)
 
         public float ArenaDiagonal => arenaHalfSize * 2f * Mathf.Sqrt(2f);
-
-        private void Awake()
-        {
-            // Per-arena obstacle scoping (NOT global FindGameObjectsWithTag) so arenas can be tiled.
-            var kids = GetComponentsInChildren<Transform>(includeInactive: true);
-            var obs = new List<Transform>();
-            foreach (var t in kids)
-                if (t != transform && t.CompareTag("obstacle")) obs.Add(t);
-            _obstacles = obs.ToArray();
-        }
 
         private void Start()
         {
             PinRayLength();
-            ApplyCount(ReadCeiling());
+            SetDifficulty(ReadDifficulty()); // no communicator -> default (hardest) level; demo overrides
         }
 
         // Pin every agent's ray length to the LARGEST lesson's diagonal, once. Keeps goals visible at all
@@ -108,21 +111,110 @@ namespace NavSim.Runtime
 
         private void FixedUpdate()
         {
-            // Only the trainer (communicator on) drives active count via environment parameters. In a
+            // Only the trainer (communicator on) drives difficulty via environment parameters. In a
             // no-communicator build (WebGL/standalone) GetWithDefault always returns the default, so
-            // polling would revert SetActiveCount every step — gate it so the demo slider latches.
+            // polling would revert the demo setters every step — gate it so the sliders latch.
             if (!Academy.Instance.IsCommunicatorOn) return;
-            int k = ReadCeiling();
-            if (k != _appliedCount) ApplyCount(k); // catches curriculum lesson advances
+            int level = ReadDifficulty();
+            if (level != _appliedDifficulty) { SetDifficulty(level); return; } // curriculum lesson advance
+            // Periodic fresh obstacle layout WITHIN a lesson -> thousands of layouts, no memorization.
+            if (++_epochStep >= layoutEpochSteps) { _epochStep = 0; RollObstacleCountAndRegenerate(); }
         }
 
-        private int ReadCeiling() => Mathf.Clamp(
-            Mathf.RoundToInt(Academy.Instance.EnvironmentParameters.GetWithDefault("num_agents", (float)NumColors)),
-            2, NumColors);
+        private int ReadDifficulty() => Mathf.Clamp(
+            Mathf.RoundToInt(Academy.Instance.EnvironmentParameters.GetWithDefault(
+                "difficulty", (float)(DifficultyMapper.NumLevels - 1))),
+            0, DifficultyMapper.NumLevels - 1);
 
         // WebGL/standalone entry: no communicator, so EnvironmentParameters returns the default —
         // the demo slider drives the count directly through this.
         public void SetActiveCount(int k) => ApplyCount(Mathf.Clamp(k, 2, NumColors));
+
+        // Apply a whole difficulty rung: resize, set count (delta), set obstacle band, regenerate layout,
+        // and reset all active agents so any left outside a shrunk arena re-place inside the new bounds.
+        public void SetDifficulty(int level)
+        {
+            var d = DifficultyMapper.ForLevel(level);
+            SetArenaSize(d.ArenaHalfSize);
+            _minObstacles = d.MinObstacles; _maxObstacles = d.MaxObstacles;
+            ApplyCount(d.AgentCount);
+            RollObstacleCountAndRegenerate();
+            ResetAllActive();
+            _appliedDifficulty = level;
+        }
+
+        private void RollObstacleCountAndRegenerate()
+        {
+            SetObstacleCount(Random.Range(_minObstacles, _maxObstacles + 1)); // int overload: max-exclusive
+            RegenerateLayout();
+        }
+
+        private void ResetAllActive()
+        {
+            // EndEpisode on an active agent is a clean trajectory boundary under plain PPO; OnEpisodeBegin
+            // re-places it (IsActive guard already true). Snapshot to avoid mutating _active mid-iterate.
+            var snapshot = new List<NavAgent>(_active);
+            foreach (var a in snapshot) a.EndEpisode();
+        }
+
+        public void SetObstacleCount(int k) => _obstacleTarget = Mathf.Clamp(k, 0, obstaclePool.Length);
+
+        // Activate _obstacleTarget pool members at points clear of ACTIVE agents and each other, deactivate
+        // the rest. Runs on a periodic epoch (train) or the demo button — never teleports onto a live agent
+        // because ClearPointForObstacle avoids active agents. Goals inside a new pillar are respawned.
+        public void RegenerateLayout()
+        {
+            int placed = 0;
+            for (int i = 0; i < obstaclePool.Length; i++)
+            {
+                var o = obstaclePool[i];
+                if (o == null) continue;
+                if (placed < _obstacleTarget)
+                {
+                    Vector3 p = ClearPointForObstacle(placed);
+                    o.position = new Vector3(p.x, o.position.y, p.z);
+                    o.gameObject.SetActive(true);
+                    placed++;
+                }
+                else o.gameObject.SetActive(false);
+            }
+            RevalidateGoals();
+        }
+
+        // Clear of active agents and of the already-placed obstacles this round.
+        private Vector3 ClearPointForObstacle(int placedSoFar)
+        {
+            for (int t = 0; t < 60; t++)
+            {
+                Vector3 p = RandomPoint();
+                if (!ClearOfAgentsAny(p)) continue;
+                bool ok = true;
+                for (int j = 0; j < placedSoFar; j++)
+                    if (obstaclePool[j] != null && obstaclePool[j].gameObject.activeSelf &&
+                        HorizontalDistance(p, obstaclePool[j].position) < obstacleObstacleClearance) { ok = false; break; }
+                if (ok) return p;
+            }
+            PlacementFallbacks++; // no clear spot in 60 tries -> placed with possible overlap (eval surfaces it)
+            return RandomPoint();
+        }
+
+        private bool ClearOfAgentsAny(Vector3 p)
+        {
+            foreach (var a in _active)
+                if (HorizontalDistance(p, a.transform.position) < obstacleClearance) return false;
+            return true;
+        }
+
+        // Any active goal now inside an obstacle gets a fresh clear point.
+        private void RevalidateGoals()
+        {
+            foreach (var a in _active)
+            {
+                Transform g = goals[a.Color];
+                if (g == null || !g.gameObject.activeSelf) continue;
+                if (!ClearOfObstacles(g.position)) RespawnGoal(a);
+            }
+        }
 
         // Activate/deactivate only the DELTA. A newly-active agent's SetActive(true) fires its
         // OnEpisodeBegin (self-place); a retiring agent gets EndEpisode() (clean trajectory under plain
@@ -168,6 +260,7 @@ namespace NavSim.Runtime
             do { p = ClearPoint(a); guard++; }
             while (HorizontalDistance(p, a.transform.position) < arenaHalfSize && guard < 60);
             g.position = new Vector3(p.x, g.position.y, p.z);
+            a.NotifyGoalMoved(); // re-sync the agent's shaping baseline (_prevDist) — advisor Finding A
         }
 
         // Place one agent at a clear point + give it a fresh far goal. Called from OnEpisodeBegin.
@@ -198,16 +291,18 @@ namespace NavSim.Runtime
                 if (!ClearOfGoals(p, forAgent)) continue;
                 return p;
             }
+            PlacementFallbacks++; // agent/goal placement exhausted its retries (eval surfaces it)
             return RandomPoint();
         }
 
         private bool ClearOfObstacles(Vector3 p)
         {
-            if (_obstacles == null) return true;
-            for (int i = 0; i < _obstacles.Length; i++)
+            if (obstaclePool == null) return true;
+            for (int i = 0; i < obstaclePool.Length; i++)
             {
-                if (_obstacles[i] == null) continue;
-                if (HorizontalDistance(p, _obstacles[i].position) < obstacleClearance) return false;
+                var o = obstaclePool[i];
+                if (o == null || !o.gameObject.activeSelf) continue;
+                if (HorizontalDistance(p, o.position) < obstacleClearance) return false;
             }
             return true;
         }

@@ -24,6 +24,12 @@ namespace NavSim.Runtime
         public void SetColor(int color) => _color = color;
         public int Color => _color;
 
+        // Re-sync the shaping baseline after the ARENA relocates this agent's goal (layout epoch, goal
+        // revalidation, arena-shrink re-home). Idempotent with the reached-block and OnEpisodeBegin, which
+        // both re-set _prevDist immediately afterward on their own paths. Advisor Finding A.
+        public void NotifyGoalMoved() =>
+            _prevDist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
+
         public override void OnEpisodeBegin()
         {
             // Fires on MaxStep interruption, on fresh activation, and when the controller retires this
@@ -68,6 +74,7 @@ namespace NavSim.Runtime
             if (reached)
             {
                 // Continuous respawn: fresh same-color goal, NO EndEpisode.
+                env.NotifyGoalReached();
                 env.RespawnGoal(this);
                 dist = Vector3.Distance(pos, env.GoalPositionFor(this));
             }
