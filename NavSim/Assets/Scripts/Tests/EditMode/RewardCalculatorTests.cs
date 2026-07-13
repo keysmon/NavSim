@@ -108,9 +108,11 @@ namespace NavSim.Tests.EditMode
         public void ReachedGoal_BonusNotGatedByVisibility()
         {
             var cfg = RewardConfig.Default;
-            // reaching implies currDist ~0 < any radius; bonus always applies
-            float r = RewardCalculator.Step(1f, 0f, true, cfg, 0.5f);
-            Assert.Greater(r, cfg.goalBonus - 0.1f);
+            // Goal HIDDEN (currDist 5 >= radius 1) so shaping is gated OFF; the reach bonus must STILL fire.
+            // prev==curr keeps the shaping delta zero regardless, isolating the bonus. Fails iff the bonus
+            // is ever moved inside the visibility gate.
+            float r = RewardCalculator.Step(5f, 5f, true, cfg, 1f);
+            Assert.AreEqual(cfg.goalBonus - cfg.stepPenalty, r, 1e-6f); // 1.0 - 0.001 = 0.999
         }
     }
 }
