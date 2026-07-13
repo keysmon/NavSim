@@ -34,35 +34,39 @@ behaviors:
 
 # Collapsed VISIBILITY-fade curriculum: difficulty 0..3 -> NavEnvironment.SetDifficulty -> ForSearchLevel
 # rung (agents + arena + obstacles ramp up while ray length / goal visibility fades from 1.0x -> 0.2x of
-# the arena diagonal). Thresholds below are PLACEHOLDERS to recalibrate from the 400k probe (plan Task 6
-# Step 4). Curiosity inflates early reward, so verify the curriculum measure reads EXTRINSIC reward before
-# trusting these (plan Task 6 Step 5). L3 has no threshold (trains to max_steps).
+# the arena diagonal).
+# CALIBRATION (off the 400k probe): reward-thresholded lessons proved unreliable here — the per-episode
+# reward is very noisy (std > 1) and ML-Agents' smoothing seed inflates the early measure, so lenient
+# reward thresholds cascade the ladder to L3 in ~100k steps (no real per-lesson learning). Switched to a
+# DETERMINISTIC progress curriculum: L0 (visible warmup) for the first 15% of max_steps (~750k), L1 to 30%,
+# L2 to 45%, then L3 (hidden) for the remaining ~2.75M. Identical across all 4 arms so the ablation is fair.
+# L3 has no threshold (trains to max_steps).
 environment_parameters:
   difficulty:
     curriculum:
       - name: L0_visible_warmup
         completion_criteria:
-          measure: reward
+          measure: progress
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: -1.0     # recalibrate off probe
+          threshold: 0.15
         value: 0.0
       - name: L1_half_visible
         completion_criteria:
-          measure: reward
+          measure: progress
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: -1.8     # recalibrate off probe
+          threshold: 0.30
         value: 1.0
       - name: L2_mostly_hidden
         completion_criteria:
-          measure: reward
+          measure: progress
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: -2.4     # recalibrate off probe
+          threshold: 0.45
         value: 2.0
       - name: L3_hidden
         value: 3.0

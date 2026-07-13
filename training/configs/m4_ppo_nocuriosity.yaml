@@ -34,27 +34,27 @@ environment_parameters:
     curriculum:
       - name: L0_visible_warmup
         completion_criteria:
-          measure: reward
+          measure: progress
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: -1.0
+          threshold: 0.15
         value: 0.0
       - name: L1_half_visible
         completion_criteria:
-          measure: reward
+          measure: progress
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: -1.8
+          threshold: 0.30
         value: 1.0
       - name: L2_mostly_hidden
         completion_criteria:
-          measure: reward
+          measure: progress
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: -2.4
+          threshold: 0.45
         value: 2.0
       - name: L3_hidden
         value: 3.0
