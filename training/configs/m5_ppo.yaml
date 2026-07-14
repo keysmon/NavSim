@@ -1,0 +1,74 @@
+# M5 PRIMARY arm: PPO + LSTM (memory) + RND (intrinsic exploration). The full policy the ablation must beat.
+# Mirrors the proven M4 config scale; the ONLY M4->M5 deltas are (1) intrinsic ICM `curiosity` -> `rnd`
+# (Random Network Distillation: cheaper, sidesteps ICM's noisy-TV failure; spec §10) and (2) the geometry-ramp
+# curriculum lesson names. RND is TRAINING-ONLY -> never exported to the ONNX/Sentis/WebGL policy (zero
+# inference cost). The three ablation arms are identical to this file EXCEPT the one deleted block (fair ablation).
+behaviors:
+  NavAgent:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048       # divisible by sequence_length (64) -> 32
+      buffer_size: 20480     # divisible by sequence_length (64) -> 320
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true        # absorbs the obs vertical-velocity magnitude (|vY| up to ~7.5 vs horizontal maxSpeed)
+      hidden_units: 256
+      num_layers: 2
+      memory:
+        memory_size: 128     # LSTM hidden state (drop this whole block for the nolstm arm)
+        sequence_length: 64
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+      rnd:                   # Random Network Distillation intrinsic drive (drop this block for nornd/baseline)
+        gamma: 0.99
+        strength: 0.02       # sub-dominant to the +1.0 goal reward; probe-calibrated (spec §13 / §14.7)
+        learning_rate: 3.0e-4  # NOTE: borrowed from M4's ICM; RND's mlagents default is 1.0e-4 -> probe-watch (§14.7)
+        network_settings:
+          hidden_units: 256
+    keep_checkpoints: 10
+    max_steps: 5000000       # PLACEHOLDER — the Task-14 probe pins the final 5-8M; EQUAL across all 12 runs
+    time_horizon: 64
+    summary_freq: 20000
+
+# Deterministic PROGRESS curriculum (reward-threshold lessons proved unusable in M4: noisy per-episode reward
+# std > 1 + smoothing seed cascades the ladder). The STRUCTURE ramps L0 open/flat -> L3 hidden + elevated +
+# crowded + pits while sight (15u) stays fixed. BREAKPOINTS are PLACEHOLDERS (0.20/0.40/0.60, more warmup than
+# M4's 0.15/0.30/0.45 because climbing + limited sight + pits need it, spec §9) -> the Task-14 probe pins them
+# into all 4 configs. Env-param key stays `difficulty` (the shipped NavEnvironment maps it to ForTerrainLevel).
+# Identical across all 4 arms so the ablation is fair. L3 has no threshold (trains to max_steps).
+environment_parameters:
+  difficulty:
+    curriculum:
+      - name: L0_open_flat
+        completion_criteria:
+          measure: progress
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.20
+        value: 0.0
+      - name: L1_behind_walls
+        completion_criteria:
+          measure: progress
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.40
+        value: 1.0
+      - name: L2_platform_pits
+        completion_criteria:
+          measure: progress
+          behavior: NavAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.60
+        value: 2.0
+      - name: L3_hidden_elevated_crowded
+        value: 3.0
