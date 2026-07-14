@@ -73,7 +73,7 @@ namespace NavSim.Runtime
             {
                 terrain.Generate(lvl, Vector3.zero, Vector3.zero); // bake structure; real spawn/goal chosen below
                 if (!SampleGround(RandomXZ(), out Vector3 spawn)) continue;
-                if (!TryPickGoal(lvl, spawn, arenaHalf * 0.5f, out Vector3 g)) continue; // far goal for a real search
+                if (!TryPickGoal(lvl, spawn, arenaHalf * 0.5f, GoalMaxDist(level), out Vector3 g)) continue; // in-sight goal, ramps with level
                 PlaceAt(agent, spawn);
                 goal.position = g;
                 agent.NotifyGoalMoved();
@@ -96,15 +96,31 @@ namespace NavSim.Runtime
             _appliedLevel = level;
         }
 
-        // A reachable goal at least `minDist` from `from`: platform-top for elevated levels, else walkable
-        // ground. False if none found this attempt (caller re-rolls).
-        private bool TryPickGoal(TerrainLevel lvl, Vector3 from, float minDist, out Vector3 g)
+        // A reachable goal within [minDist, maxDist] of `from`: platform-top for elevated levels, else walkable
+        // ground. The maxDist cap keeps warmup goals inside sight (15u) + ray-perception range so the privileged
+        // shaping reward has a matching OBSERVABLE signal (else the agent is rewarded for approaching a goal it
+        // cannot perceive -> no learnable gradient). The cap ramps open with difficulty. False -> caller re-rolls.
+        private bool TryPickGoal(TerrainLevel lvl, Vector3 from, float minDist, float maxDist, out Vector3 g)
         {
             g = Vector3.zero;
             if (lvl.GoalElevated) { if (!terrain.RandomPlatformTop(out g)) return false; }
             else if (!SampleGround(RandomXZ(), out g)) return false;
-            if (Vector3.Distance(from, g) < minDist) return false;
+            float d = Vector3.Distance(from, g);
+            if (d < minDist || d > maxDist) return false;
             return terrain.IsReachable(from, g);
+        }
+
+        // Max spawn->goal distance per curriculum level: tight at the warmup rungs (goal starts in sight AND
+        // ray-perceivable), opening up as difficulty rises to a full-arena search at L3 (diagonal ~31u).
+        private static float GoalMaxDist(int level)
+        {
+            switch (level)
+            {
+                case 0: return 9f;    // warmup: always well inside sight 15
+                case 1: return 12f;
+                case 2: return 16f;   // elevated; generous so platform-top placement isn't over-constrained
+                default: return 999f; // L3+: unbounded full-arena search
+            }
         }
 
         public Vector3 GoalPositionFor(NavAgent a) => goal.position;
@@ -122,8 +138,9 @@ namespace NavSim.Runtime
             // Elevated levels use a SMALLER min-distance so a same-platform re-target still qualifies (esp. L2's
             // single platform, whose jittered top points span ~3u) instead of collapsing to the ground fallback.
             float minDist = lvl.GoalElevated ? 2f : arenaHalf * 0.5f;
+            float maxDist = GoalMaxDist(level);
             for (int t = 0; t < 20; t++)
-                if (TryPickGoal(lvl, a.transform.position, minDist, out Vector3 g)) { goal.position = g; a.NotifyGoalMoved(); return; }
+                if (TryPickGoal(lvl, a.transform.position, minDist, maxDist, out Vector3 g)) { goal.position = g; a.NotifyGoalMoved(); return; }
             // Robustness: if no (elevated) goal was found, fall back to ANY reachable ground point.
             for (int t = 0; t < 20; t++)
                 if (SampleGround(RandomXZ(), out Vector3 g) && terrain.IsReachable(a.transform.position, g))
