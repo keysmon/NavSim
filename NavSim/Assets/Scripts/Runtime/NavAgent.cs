@@ -23,6 +23,8 @@ namespace NavSim.Runtime
         private float _prevDist;
         private float _vY; // integrated vertical velocity (LocomotionMath)
 
+        public int JumpUses { get; private set; } // eval instrumentation (M5SearchEval reads deltas)
+
         public override void Initialize() => _cc = GetComponent<CharacterController>();
 
         // Re-sync the shaping baseline after the ARENA relocates this agent's goal (goal respawn, safe
@@ -56,6 +58,7 @@ namespace NavSim.Runtime
             transform.Rotate(0f, turn * maxTurnDegPerStep, 0f);
 
             bool grounded = _cc.isGrounded;
+            if (jumpPressed && grounded) JumpUses++; // a jump only launches from the ground (LocomotionMath)
             _vY = LocomotionMath.NextVerticalVelocity(
                 _vY, grounded, jumpPressed, jumpImpulse, gravity, Time.fixedDeltaTime, terminalVelocity);
 

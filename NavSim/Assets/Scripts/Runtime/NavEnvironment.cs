@@ -35,6 +35,8 @@ namespace NavSim.Runtime
 
         public float KillPlaneY => killPlaneY;
         public int GoalsReached { get; private set; }
+        public int PitFalls { get; private set; }        // eval instrumentation (M5SearchEval reads deltas)
+        public float GoalRadius => goalRadius;            // eval measures reach against a captured goal0
 
         private int _appliedLevel = -1;
 
@@ -150,6 +152,7 @@ namespace NavSim.Runtime
         // keeping episode + LSTM memory. Never a shortcut toward the goal — re-homes near the fall site.
         public void RespawnToSafeGround(NavAgent a)
         {
+            PitFalls++;
             Vector3 p = a.transform.position; p.y = 1f;
             if (NavMesh.SamplePosition(p, out NavMeshHit hit, respawnSampleRadius, NavMesh.AllAreas))
                 PlaceAt(a, hit.position + Vector3.up * 0.1f);
