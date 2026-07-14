@@ -41,3 +41,14 @@ node_modules/
 results/
 *.onnx.meta.bak
 .playwright-mcp/
+
+# --- Unity player builds (large binaries, never tracked) ---
+/Builds/
+
+# --- M5 throwaway probe config (Task 14 calibration; not a 5th ablation arm) ---
+training/configs/m5_ppo_probe.yaml
+
+# --- M5 diagnostic probe checkpoints copied into Assets for rollout-watches (throwaway; the real
+#     m5_<arm>_s<seed>.onnx models are staged explicitly in Phase 7) ---
+NavSim/Assets/Models/M5/m5_probe*.onnx
+NavSim/Assets/Models/M5/m5_probe*.onnx.meta

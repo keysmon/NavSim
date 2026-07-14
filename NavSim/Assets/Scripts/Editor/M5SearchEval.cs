@@ -116,6 +116,8 @@ public static class M5SearchEval
     {
         UnityEngine.Random.InitState(seed * 10000 + lvl * 100 + ep); // SAME baked layout across arms (paired)
         env.SetTerrainLevel(lvl);
+        Physics.SyncTransforms(); // simulationMode=Script defers transform->physics sync; push it so the first
+                                  // step's ray/Linecast perception reads the freshly-placed geometry, not stale colliders
         Vector3 start = agent.transform.position;
         Vector3 goal0 = env.GoalPositionFor(agent);      // Vector3 value copy — never the goal Transform
         float sp = terrain.ShortestPathLength(start, goal0);
