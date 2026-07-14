@@ -25,11 +25,6 @@ namespace NavSim.Runtime
 
         public override void Initialize() => _cc = GetComponent<CharacterController>();
 
-        // Vestigial single-learner identity. M5 has ONE learner, so color is always 0; these keep the
-        // M4-era NavEnvironment crowd machinery compiling until Task 9 rewrites it for a single learner.
-        public void SetColor(int color) { }
-        public int Color => 0;
-
         // Re-sync the shaping baseline after the ARENA relocates this agent's goal (goal respawn, safe
         // respawn, lesson change). Idempotent with OnEpisodeBegin and the reached/pit blocks, which re-set
         // _prevDist on their own paths. Advisor Finding A (M3).
