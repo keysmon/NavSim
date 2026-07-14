@@ -16,6 +16,7 @@ namespace NavSim.Runtime
         [SerializeField] private Transform[] walls;
         [SerializeField] private Transform[] pitTiles;   // floor tiles hidden to "dig" a pit
         [SerializeField] private float arenaHalf = DifficultyMapper.M5ArenaHalf;
+        [SerializeField] private float platformJitter = 1.2f; // XZ spread when sampling a platform-top goal
 
         public bool NavMeshReady { get; private set; }
 
@@ -58,7 +59,35 @@ namespace NavSim.Runtime
             return len;
         }
 
+        // A NavMesh-sampled walkable point on top of a random ACTIVE platform, for elevated-goal placement
+        // (spec §5, L2/L3). Returns false if no platform is active or none has walkable ground on top, so the
+        // caller re-rolls the layout instead of stranding the goal in mid-air.
+        public bool RandomPlatformTop(out Vector3 point)
+        {
+            point = Vector3.zero;
+            if (platforms == null) return false;
+            var active = new System.Collections.Generic.List<Transform>();
+            for (int i = 0; i < platforms.Length; i++)
+                if (platforms[i] != null && platforms[i].gameObject.activeSelf) active.Add(platforms[i]);
+            if (active.Count == 0) return false;
+            for (int t = 0; t < active.Count * 4; t++)
+            {
+                Transform p = active[Random.Range(0, active.Count)];
+                // Jitter within the platform footprint so successive picks vary ACROSS a platform — a single
+                // platform (L2) must still yield distinct re-target points for continuous elevated respawn,
+                // not just its centre — then sample the walkable top just above.
+                Vector3 jitter = new Vector3(Random.Range(-platformJitter, platformJitter), 0f,
+                                             Random.Range(-platformJitter, platformJitter));
+                Vector3 probe = p.position + jitter + Vector3.up * 1.5f;
+                if (NavMesh.SamplePosition(probe, out var hit, 2f, NavMesh.AllAreas)) { point = hit.position; return true; }
+            }
+            return false;
+        }
+
+
         // Activate the first k members (repositioned to fresh random ground); deactivate the rest.
+        // Activate the first k members (repositioned to a fresh random X/Z; authored Y is PRESERVED so raised
+        // platforms/walls/ramps keep sitting on the floor instead of sinking to y=0); deactivate the rest.
         private void ActivatePool(Transform[] pool, int k)
         {
             if (pool == null) return;
@@ -66,7 +95,11 @@ namespace NavSim.Runtime
             {
                 if (pool[i] == null) continue;
                 bool on = i < k;
-                if (on) pool[i].position = RandomGroundPoint();
+                if (on)
+                {
+                    Vector3 gp = RandomGroundPoint();
+                    pool[i].position = new Vector3(gp.x, pool[i].position.y, gp.z);
+                }
                 pool[i].gameObject.SetActive(on);
             }
         }
