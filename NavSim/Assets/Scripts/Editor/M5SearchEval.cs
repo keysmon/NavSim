@@ -24,7 +24,7 @@ using NavSim.Runtime;
 public static class M5SearchEval
 {
     private static readonly string[] Arms = { "m5_primary", "m5_nolstm", "m5_nornd", "m5_baseline" };
-    private static readonly int[] Seeds = { 0, 1, 2 };   // shared across arms (paired)
+    private static readonly int[] Seeds = { 0, 1, 2, 3, 4 };   // shared across arms (paired); n=5 per pre-registered add-seeds rule
     private static readonly int[] Levels = { 0, 1, 2, 3 };
     private const int EpisodesPerLevel = 25;             // 4 levels * 25 = 100 held-out / seed
     private const int MaxSteps = 3000;
