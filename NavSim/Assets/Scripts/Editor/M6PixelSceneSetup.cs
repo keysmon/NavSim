@@ -1,4 +1,5 @@
 using UnityEditor;
+using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using Unity.MLAgents.Sensors;
@@ -106,5 +107,32 @@ public static class M6PixelSceneSetup
     {
         go.layer = layer;
         foreach (Transform c in go.transform) SetLayerRecursively(c.gameObject, layer);
+    }
+
+    // Build a StandaloneOSX player of Training_pixel for headless mlagents training (WITH graphics so the camera
+    // renders). Used for the real-terrain throughput measurement + the real training runs.
+    public static void BuildPlayer()
+    {
+        try
+        {
+            if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneOSX)
+                EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneOSX);
+            var opts = new BuildPlayerOptions
+            {
+                scenes = new[] { "Assets/Scenes/Training_pixel.unity" },
+                locationPathName = System.IO.Path.GetFullPath(Application.dataPath + "/../Builds/M6PixelTrain.app"),
+                target = BuildTarget.StandaloneOSX,
+                options = BuildOptions.None
+            };
+            var summary = BuildPipeline.BuildPlayer(opts).summary;
+            Debug.Log("[M6PixelScene] BuildPlayer result=" + summary.result + " errors=" + summary.totalErrors +
+                      " out=" + opts.locationPathName);
+            EditorApplication.Exit(summary.result == BuildResult.Succeeded ? 0 : 1);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("[M6PixelScene] BuildPlayer FAILED: " + e);
+            EditorApplication.Exit(2);
+        }
     }
 }
