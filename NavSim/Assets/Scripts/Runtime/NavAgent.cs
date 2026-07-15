@@ -18,11 +18,6 @@ namespace NavSim.Runtime
         [SerializeField] private float gravity = -20f;
         [SerializeField] private float terminalVelocity = -30f;
         [SerializeField] private RewardConfig reward = RewardConfig.Default;
-        // Anti-freeze explore bias: reward per FULL-SPEED step of actual horizontal displacement. Pushes the
-        // fresh policy off the frozen fixed point (freeze = min-loss under a step cost) so it moves enough to
-        // sample the perception-gated shaping + goal bonus. Kept small; a searcher (bias + shaping + reaches)
-        // out-scores a farmer (bias only), so it un-freezes without becoming the objective.
-        [SerializeField] private float exploreBias = 0.003f;
 
         private CharacterController _cc;
         private float _prevDist;
@@ -93,13 +88,9 @@ namespace NavSim.Runtime
 
             Vector3 horiz = transform.forward * forward * maxSpeed;
             Vector3 move = new Vector3(horiz.x, _vY, horiz.z);
-            Vector3 posBefore = transform.position;
             _cc.Move(move * Time.fixedDeltaTime);
 
             Vector3 pos = transform.position;
-            // Anti-freeze explore bias from ACTUAL horizontal displacement (0 when frozen or wall-blocked).
-            float horizMoved = new Vector2(pos.x - posBefore.x, pos.z - posBefore.z).magnitude;
-            float exploreReward = exploreBias * Mathf.Clamp01(horizMoved / (maxSpeed * Time.fixedDeltaTime));
             float dist = Vector3.Distance(pos, env.GoalPositionFor(this));
             bool fellInPit = LocomotionMath.FellInPit(pos.y, env.KillPlaneY);
             // A same-step pit fall VOIDS the reach (pit-first precedence): the fall is the outcome, so no
@@ -111,7 +102,7 @@ namespace NavSim.Runtime
             float step = RewardCalculator.Step(_prevDist, dist, reached, reward, goalVisible, fellInPit);
             var neighborDist = CrowdMath.NeighborDistances(pos, env.MoverPositions(), reward.congestionRadius);
             float moverCost = RewardCalculator.CrowdPenalty(neighborDist, reward);
-            AddReward(step - moverCost + exploreReward);
+            AddReward(step - moverCost);
 
             if (fellInPit)
             {
