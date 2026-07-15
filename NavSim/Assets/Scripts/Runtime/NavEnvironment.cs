@@ -148,7 +148,19 @@ namespace NavSim.Runtime
                     for (int t = 0; t < 20 && !placed; t++) // relaxed: any reachable ground, far enough
                         if (SampleGround(RandomXZ(), out Vector3 gp) && terrain.IsReachable(from, gp) && FarFromPlaced(gp, i))
                         { _goals[i].position = gp; placed = true; }
-                if (!placed && SampleGround(RandomXZ(), out Vector3 last)) _goals[i].position = last; // last resort
+                // Last resort (design-unreachable in practice): KEEP SPACING even if reachability can't be
+                // guaranteed — a co-located target+decoy is unwinnable (decoy-before-reach precedence). Warn so
+                // it is observable if it ever fires in a real run.
+                if (!placed)
+                    for (int t = 0; t < 20 && !placed; t++)
+                        if (SampleGround(RandomXZ(), out Vector3 lr) && FarFromPlaced(lr, i))
+                        { _goals[i].position = lr; placed = true; }
+                if (!placed)
+                {
+                    Vector3 baseP = SampleGround(Vector3.zero, out Vector3 c) ? c : from;
+                    _goals[i].position = baseP + new Vector3((i - 1) * goalRadius * 3f, 0f, 0f); // forced spacing
+                    Debug.LogWarning("[NavEnvironment] PlaceTriad last-resort for goal " + i + " (rare) — forced-spaced placement.");
+                }
             }
             AssignColorsAndTarget();
         }
