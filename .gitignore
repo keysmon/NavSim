@@ -48,7 +48,8 @@ results/
 # --- M5 throwaway probe config (Task 14 calibration; not a 5th ablation arm) ---
 training/configs/m5_ppo_probe.yaml
 
-# --- M5 diagnostic probe checkpoints copied into Assets for rollout-watches (throwaway; the real
-#     m5_<arm>_s<seed>.onnx models are staged explicitly in Phase 7) ---
-NavSim/Assets/Models/M5/m5_probe*.onnx
-NavSim/Assets/Models/M5/m5_probe*.onnx.meta
+# --- M5 model binaries (regenerable outputs): diagnostic probe checkpoints AND the 20 trained ablation
+#     models (m5_<arm>_s<seed>.onnx). The RESULT is captured in training/eval/ (csv + figure); models are
+#     re-created by the training scripts, so they are not tracked. ---
+NavSim/Assets/Models/M5/*.onnx
+NavSim/Assets/Models/M5/*.onnx.meta
