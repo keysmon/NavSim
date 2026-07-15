@@ -5,16 +5,19 @@ using Unity.MLAgents;
 
 namespace NavSim.Runtime
 {
-    // Single-learner 3D terrain-search arena (M5). One CharacterController learner navigates a procedurally
-    // generated arena (ramps/platforms/walls/pits) to a hidden goal gated by a line-of-sight "flashlight".
-    // A collapsed `difficulty` curriculum drives the terrain ladder (DifficultyMapper.ForTerrainLevel): higher
-    // rungs add walls, elevate the goal onto ramp-reachable platforms, dig pits, and add oblivious NavMeshAgent
-    // movers. The runtime-baked NavMesh (TerrainGenerator) is the solvability gate + SPL oracle + mover substrate.
-    // Plain PPO: one Agent, finite MaxStep, continuous goal respawn within an episode (no EndEpisode on reach).
+    // Single-learner 3D terrain-search arena. M6 adds CUED VISUAL OBJECT-GOAL SEARCH on top of the M5 terrain:
+    // instead of one goal there are THREE geometrically identical goals differing only in color; one color is the
+    // per-episode TARGET (announced to the agent via a persistent RGB cue), the other two are decoys. Reaching the
+    // cued goal = success; touching a decoy = failure (soften->harden, DecoyRules). The three goals are a RUNTIME
+    // pool built from the single scene `goal` TEMPLATE (mirrors MoverController's pool idiom) — no per-arm scene
+    // surgery. Colors are assigned each episode from GoalPalette (target slot decorrelated from position). The
+    // collapsed `difficulty` curriculum drives the M5 terrain ladder; the runtime-baked NavMesh is the solvability
+    // gate + SPL oracle + mover substrate. Plain PPO: one Agent, finite MaxStep, continuous triad respawn.
     public class NavEnvironment : MonoBehaviour
     {
         [Header("Wiring (assign in Editor)")]
         [SerializeField] private NavAgent agent;
+        [Tooltip("The goal TEMPLATE — the runtime triad is this + 2 instantiated siblings.")]
         [SerializeField] private Transform goal;
         [SerializeField] private TerrainGenerator terrain;
         [SerializeField] private MoverController movers;
@@ -23,6 +26,14 @@ namespace NavSim.Runtime
         [SerializeField] private float arenaHalf = DifficultyMapper.M5ArenaHalf;
         [Tooltip("3-D reach radius. Elevated goals need vertical slack (capsule centre sits above the platform).")]
         [SerializeField] private float goalRadius = 1.5f;
+
+        [Header("Perception (M6)")]
+        [Tooltip("PIXEL arm ONLY: real-frustum shaping gate. Leave null on ray arms.")]
+        [SerializeField] private Camera agentCamera;
+        [Tooltip("RAY arms: shaping-gate cone half-angle (= 180-deg fan half). Ignored when agentCamera is set.")]
+        [SerializeField] private float forwardHalfAngleDeg = 90f;
+        [Tooltip("false: all goals share the \"goal\" tag (pixel/ray1). true: per-color \"goal_c{k}\" tags (rayC).")]
+        [SerializeField] private bool tagGoalsByColor = false;
 
         [Header("Line of sight")]
         [Tooltip("Walls/platforms/ramps only (NOT movers) — LoS is occluded by STATIC geometry, not transient movers.")]
@@ -35,10 +46,25 @@ namespace NavSim.Runtime
 
         public float KillPlaneY => killPlaneY;
         public int GoalsReached { get; private set; }
-        public int PitFalls { get; private set; }        // eval instrumentation (M5SearchEval reads deltas)
-        public float GoalRadius => goalRadius;            // eval measures reach against a captured goal0
+        public int PitFalls { get; private set; }        // eval instrumentation (eval reads deltas)
+        public float GoalRadius => goalRadius;            // eval measures reach against a captured target0
+        public int CurrentLevel => _appliedLevel < 0 ? 0 : _appliedLevel; // read by NavAgent for DecoyRules
+
+        // The per-episode RGB target-color cue (given identically to every arm; the sole "which color is target"
+        // channel). Read by NavAgent.CollectObservations.
+        public Color TargetColorRgb { get; private set; }
 
         private int _appliedLevel = -1;
+        private Transform[] _goals;                       // runtime triad: _goals[0] == `goal` template + 2 siblings
+        private GoalPalette.GoalAssignment _assign;
+        private System.Random _colorRng = new System.Random();
+
+        private int TargetSlot => _assign.ColorIndices == null ? 0 : _assign.TargetSlot;
+        private Transform Target => _goals[TargetSlot];
+
+        // Force the per-episode color RNG so a paired eval reproduces identical (colors, target) across arms.
+        // Training leaves it free-running.
+        public void SeedColorRng(int seed) => _colorRng = new System.Random(seed);
 
         // Initial bake so a NavMesh exists before the agent's first OnEpisodeBegin (which re-bakes a fresh layout).
         private void Start() => SetTerrainLevel(ReadDifficulty());
@@ -62,44 +88,95 @@ namespace NavSim.Runtime
         // fresh solvable arena is drawn every episode -> thousands of layouts, no memorisation.
         public void PlaceForNewEpisode(NavAgent a) => SetTerrainLevel(ReadDifficulty());
 
-        // Build a fresh solvable terrain layout: bake structure, then place a walkable spawn + a (possibly
-        // elevated) reachable, far-enough goal, retrying until the baked NavMesh connects them. Then set the
-        // mover count on the live mesh.
+        // Build the runtime triad from the scene `goal` template (once). _goals[0] IS the template; siblings are
+        // geometrically identical copies (same mesh/collider/tag) — color is the only per-episode difference.
+        private void EnsureTriad()
+        {
+            if (_goals != null) return;
+            _goals = new Transform[3];
+            _goals[0] = goal;
+            for (int i = 1; i < 3; i++)
+            {
+                Transform g = Instantiate(goal, goal.parent);
+                g.name = goal.name + "_" + i;
+                _goals[i] = g;
+            }
+        }
+
+        // Build a fresh solvable terrain layout: bake structure, then place a walkable spawn + a reachable triad,
+        // retrying the bake until spawn+goal connect. Then set the mover count on the live mesh.
         public void SetTerrainLevel(int level)
         {
             if (terrain == null || agent == null || goal == null) return;
+            EnsureTriad();
             TerrainLevel lvl = DifficultyMapper.ForTerrainLevel(level);
             for (int t = 0; t < 20; t++)
             {
-                terrain.Generate(lvl, Vector3.zero, Vector3.zero); // bake structure; real spawn/goal chosen below
+                terrain.Generate(lvl, Vector3.zero, Vector3.zero); // bake structure; real spawn/goals chosen below
                 if (!SampleGround(RandomXZ(), out Vector3 spawn)) continue;
-                if (!TryPickGoal(lvl, spawn, arenaHalf * 0.5f, GoalMaxDist(level), out Vector3 g)) continue; // in-sight goal, ramps with level
+                if (!TryPickGoal(lvl, spawn, arenaHalf * 0.5f, GoalMaxDist(level), out Vector3 _)) continue; // terrain is goal-placeable
                 PlaceAt(agent, spawn);
-                goal.position = g;
+                PlaceTriad(lvl, spawn, level);
                 agent.NotifyGoalMoved();
                 if (movers != null) movers.SetCount(lvl.Movers);
                 _appliedLevel = level;
                 return;
             }
-            // Retries exhausted (rare): place best-effort AND give a reachable ground goal (dropping the
-            // far-distance constraint) so the episode never runs with a stale/unreachable goal or a wrong
-            // _prevDist baseline. NotifyGoalMoved re-syncs the shaping baseline whether or not a goal was found.
+            // Retries exhausted (rare): best-effort spawn + triad so the episode never runs stale.
             if (SampleGround(RandomXZ(), out Vector3 fallback) || SampleGround(Vector3.zero, out fallback))
             {
                 PlaceAt(agent, fallback);
-                for (int t = 0; t < 20; t++)
-                    if (SampleGround(RandomXZ(), out Vector3 fg) && terrain.IsReachable(fallback, fg))
-                    { goal.position = fg; break; }
+                PlaceTriad(lvl, fallback, level);
             }
             agent.NotifyGoalMoved();
             if (movers != null) movers.SetCount(lvl.Movers);
             _appliedLevel = level;
         }
 
+        // Place all 3 goals at distinct, reachable, far-enough-apart positions, then assign colors + the target.
+        // Every goal is made reachable (any could become the target), so solvability holds whichever is cued.
+        // Decoys share the target's placement constraints so geometry never distinguishes them.
+        private void PlaceTriad(TerrainLevel lvl, Vector3 from, int level)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                bool placed = false;
+                for (int t = 0; t < 20 && !placed; t++)
+                    if (TryPickGoal(lvl, from, arenaHalf * 0.5f, GoalMaxDist(level), out Vector3 gp) && FarFromPlaced(gp, i))
+                    { _goals[i].position = gp; placed = true; }
+                if (!placed)
+                    for (int t = 0; t < 20 && !placed; t++) // relaxed: any reachable ground, far enough
+                        if (SampleGround(RandomXZ(), out Vector3 gp) && terrain.IsReachable(from, gp) && FarFromPlaced(gp, i))
+                        { _goals[i].position = gp; placed = true; }
+                if (!placed && SampleGround(RandomXZ(), out Vector3 last)) _goals[i].position = last; // last resort
+            }
+            AssignColorsAndTarget();
+        }
+
+        private bool FarFromPlaced(Vector3 p, int upto)
+        {
+            for (int j = 0; j < upto; j++)
+                if (Vector3.Distance(p, _goals[j].position) < goalRadius * 3f) return false;
+            return true;
+        }
+
+        // Draw 3 distinct colors + a target slot (target slot INDEPENDENT of position, GoalPalette), paint the
+        // goal renderers, set the cue, and (rayC only) tag each goal by its color.
+        private void AssignColorsAndTarget()
+        {
+            _assign = GoalPalette.Assign(_colorRng);
+            for (int i = 0; i < 3; i++)
+            {
+                Renderer rend = _goals[i].GetComponentInChildren<Renderer>();
+                if (rend != null) rend.material.color = GoalPalette.Colors[_assign.ColorIndices[i]];
+                _goals[i].tag = tagGoalsByColor ? GoalPalette.Tag(_assign.ColorIndices[i]) : "goal";
+            }
+            TargetColorRgb = GoalPalette.TargetColor(_assign);
+        }
+
         // A reachable goal within [minDist, maxDist] of `from`: platform-top for elevated levels, else walkable
-        // ground. The maxDist cap keeps warmup goals inside sight (15u) + ray-perception range so the privileged
-        // shaping reward has a matching OBSERVABLE signal (else the agent is rewarded for approaching a goal it
-        // cannot perceive -> no learnable gradient). The cap ramps open with difficulty. False -> caller re-rolls.
+        // ground. The maxDist cap keeps warmup goals inside sight so the shaping reward has a matching observable
+        // signal. The cap ramps open with difficulty. False -> caller re-rolls.
         private bool TryPickGoal(TerrainLevel lvl, Vector3 from, float minDist, float maxDist, out Vector3 g)
         {
             g = Vector3.zero;
@@ -110,8 +187,7 @@ namespace NavSim.Runtime
             return terrain.IsReachable(from, g);
         }
 
-        // Max spawn->goal distance per curriculum level: tight at the warmup rungs (goal starts in sight AND
-        // ray-perceivable), opening up as difficulty rises to a full-arena search at L3 (diagonal ~31u).
+        // Max spawn->goal distance per curriculum level: tight at the warmup rungs, opening to full-arena at L3.
         private static float GoalMaxDist(int level)
         {
             switch (level)
@@ -123,42 +199,67 @@ namespace NavSim.Runtime
             }
         }
 
-        public Vector3 GoalPositionFor(NavAgent a) => goal.position;
+        // The CUED target goal's position — NavAgent's shaping/reach all point here.
+        public Vector3 GoalPositionFor(NavAgent a) => Target.position;
 
-        // 3-D reach: reached only within goalRadius in ALL axes, so an elevated goal requires being ON the
-        // platform, not on the ground beneath it. Shares the 3-D metric with the distance shaping
-        // (RewardCalculator) so reward and success never disagree.
-        public bool ReachedGoal(NavAgent a) => Vector3.Distance(a.transform.position, goal.position) < goalRadius;
+        // 3-D reach of the CUED target: within goalRadius in ALL axes (an elevated goal requires being ON the platform).
+        public bool ReachedGoal(NavAgent a) => Vector3.Distance(a.transform.position, Target.position) < goalRadius;
 
-        // Continuous respawn on reach: a fresh reachable goal on the SAME baked terrain (no EndEpisode).
+        // Touched a WRONG-color goal this step (episode-ending under the hard schedule; penalty under soft).
+        public bool TouchedDecoy(NavAgent a)
+        {
+            for (int i = 0; i < 3; i++)
+                if (i != TargetSlot && Vector3.Distance(a.transform.position, _goals[i].position) < goalRadius)
+                    return true;
+            return false;
+        }
+
+        // The two non-target goal positions as VALUES (the eval captures these once per episode for paired,
+        // transform-independent outcome detection).
+        public Vector3[] DecoyPositions()
+        {
+            var d = new List<Vector3>(2);
+            for (int i = 0; i < 3; i++) if (i != TargetSlot) d.Add(_goals[i].position);
+            return d.ToArray();
+        }
+
+        // Shaping gate: the CUED target is in the agent's ACTUAL forward perceptual field AND unoccluded AND in
+        // range. INVARIANT (advisor): the gate must be a SUBSET of the arm's true FOV — err NARROW (a too-wide
+        // gate rewards reducing distance to a target the sensor can't see -> the M5 freeze trap). PIXEL arm
+        // (agentCamera set) tests the REAL camera frustum (handles H/V FOV + tilt + elevation); RAY arms use a
+        // scalar forward cone at the fan half-angle.
+        public bool TargetPerceivable(NavAgent a)
+        {
+            Vector3 eye = a.transform.position + Vector3.up * eyeHeight;
+            Vector3 tp = Target.position;
+            if (Vector3.Distance(eye, tp) > DifficultyMapper.SightRange) return false;
+            if (Physics.Linecast(eye, tp, staticGeometryMask)) return false; // occluded by static geometry
+            if (agentCamera != null)
+            {
+                Vector3 v = agentCamera.WorldToViewportPoint(tp);
+                return v.z > 0f && v.x >= 0f && v.x <= 1f && v.y >= 0f && v.y <= 1f; // inside the real frustum
+            }
+            return Vector3.Angle(a.transform.forward, tp - eye) <= forwardHalfAngleDeg; // ray-fan cone
+        }
+
+        // Continuous respawn on reaching the cued target: a fresh triad + cue on the SAME baked terrain (no EndEpisode).
         public void RespawnGoal(NavAgent a)
         {
             int level = _appliedLevel < 0 ? 0 : _appliedLevel;
             TerrainLevel lvl = DifficultyMapper.ForTerrainLevel(level);
-            // Elevated levels use a SMALLER min-distance so a same-platform re-target still qualifies (esp. L2's
-            // single platform, whose jittered top points span ~3u) instead of collapsing to the ground fallback.
-            float minDist = lvl.GoalElevated ? 2f : arenaHalf * 0.5f;
-            float maxDist = GoalMaxDist(level);
-            for (int t = 0; t < 20; t++)
-                if (TryPickGoal(lvl, a.transform.position, minDist, maxDist, out Vector3 g)) { goal.position = g; a.NotifyGoalMoved(); return; }
-            // Robustness: if no (elevated) goal was found, fall back to ANY reachable ground point.
-            for (int t = 0; t < 20; t++)
-                if (SampleGround(RandomXZ(), out Vector3 g) && terrain.IsReachable(a.transform.position, g))
-                { goal.position = g; a.NotifyGoalMoved(); return; }
-            // Last resort (design-unreachable): snap the goal near the arena centre so it is never left stale.
-            if (SampleGround(Vector3.zero, out Vector3 c)) { goal.position = c; a.NotifyGoalMoved(); }
+            PlaceTriad(lvl, a.transform.position, level);
+            a.NotifyGoalMoved();
         }
 
         public void NotifyGoalReached() => GoalsReached++;
 
-        // LoS gate: goal within fixed sight AND no STATIC geometry between the agent's eye and the goal.
-        // Movers are deliberately excluded (staticGeometryMask) so the visibility nudge doesn't flicker as
-        // they pass (spec §8). With the mask unset (Nothing), Linecast never blocks -> range-only.
+        // LoS gate to the cued target: within fixed sight AND no STATIC geometry between the agent's eye and it.
+        // (Kept for API compatibility; NavAgent's shaping uses TargetPerceivable.)
         public bool GoalVisibleTo(NavAgent a)
         {
             Vector3 eye = a.transform.position + Vector3.up * eyeHeight;
-            float dist = Vector3.Distance(eye, goal.position);
-            bool blocked = Physics.Linecast(eye, goal.position, staticGeometryMask);
+            float dist = Vector3.Distance(eye, Target.position);
+            bool blocked = Physics.Linecast(eye, Target.position, staticGeometryMask);
             return VisibilityGate.IsGoalVisible(dist, DifficultyMapper.SightRange, lineOfSightClear: !blocked);
         }
 

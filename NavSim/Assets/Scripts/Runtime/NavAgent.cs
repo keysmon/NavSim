@@ -5,9 +5,11 @@ using Unity.MLAgents.Sensors;
 
 namespace NavSim.Runtime
 {
-    // M5 single searcher on 3D terrain. CharacterController + manual gravity; hybrid action space
-    // (forward, turn continuous; jump discrete). Continuous goal respawn (no EndEpisode on reach);
-    // a pit fall is penalised then teleported to safe ground (memory + episode continue).
+    // M6 single searcher on 3D terrain. CharacterController + manual gravity; hybrid action space (forward, turn
+    // continuous; jump discrete). Cued visual object-goal search: obs carry a persistent RGB target-color cue;
+    // reaching the CUED goal respawns a fresh triad (continuous respawn, no EndEpisode); touching a DECOY costs
+    // reward and — under the hard schedule (L1+, DecoyRules) — ends the episode; a pit fall is penalised then the
+    // agent is teleported to safe ground (memory + episode continue).
     [RequireComponent(typeof(CharacterController))]
     public class NavAgent : Agent
     {
@@ -21,56 +23,40 @@ namespace NavSim.Runtime
 
         private CharacterController _cc;
         private float _prevDist;
-        private float _vY; // integrated vertical velocity (LocomotionMath)
-        private RayPerceptionSensorComponent3D _fwdRays; // forward fan, for the perception-gated shaping
-        private int _goalTagIdx = -1;                    // index of the "goal" tag in the forward fan
+        private float _vY;          // integrated vertical velocity (LocomotionMath)
+        private bool _wasOnDecoy;   // one-shot decoy contact: charge -decoyPenalty on ENTRY only (camping doesn't re-charge)
 
-        public int JumpUses { get; private set; } // eval instrumentation (M5SearchEval reads deltas)
+        public int JumpUses { get; private set; } // eval instrumentation (eval reads deltas)
 
         public override void Initialize()
         {
             _cc = GetComponent<CharacterController>();
-            // Cache the forward ray fan + goal tag so shaping can be gated on what the POLICY actually
-            // perceives (a forward-ray goal hit), not on privileged omnidirectional geometry (OnActionReceived).
-            foreach (var r in GetComponents<RayPerceptionSensorComponent3D>())
-                if (r.SensorName == "RayForward") _fwdRays = r;
-            if (_fwdRays != null) _goalTagIdx = _fwdRays.DetectableTags.IndexOf("goal");
+            // M6: shaping is gated on env.TargetPerceivable (a per-arm geometric gate matched to the sensor's true
+            // FOV), so there is no ray-fan to cache here — the pixel arm has no rays, and rayC's per-color tags
+            // would break M5's single-"goal"-tag ray gate.
         }
 
-        // Re-sync the shaping baseline after the ARENA relocates this agent's goal (goal respawn, safe
-        // respawn, lesson change). Idempotent with OnEpisodeBegin and the reached/pit blocks, which re-set
-        // _prevDist on their own paths. Advisor Finding A (M3).
+        // Re-sync the shaping baseline after the ARENA relocates this agent's (cued) goal — triad respawn, safe
+        // respawn, lesson change. Idempotent with OnEpisodeBegin and the reached/pit blocks. Advisor Finding A (M3).
         public void NotifyGoalMoved() =>
             _prevDist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
 
         public override void OnEpisodeBegin()
         {
-            env.PlaceForNewEpisode(this); // arena places agent + its goal
+            env.PlaceForNewEpisode(this); // arena places agent + the triad
             _vY = 0f;
+            _wasOnDecoy = false;
             _prevDist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
         }
 
         public override void CollectObservations(VectorSensor sensor)
         {
             bool grounded = _cc.isGrounded;
-            // jumpReady == grounded: a jump is only launchable from the ground (no double-jump).
+            // jumpReady == grounded: a jump is only launchable from the ground (no double-jump). The RGB cue is
+            // the persistent "which color is the target" channel, identical across all arms.
             float[] obs = ObservationBuilder.Build(
-                _cc.velocity, transform.eulerAngles.y, maxSpeed, grounded, grounded);
+                _cc.velocity, transform.eulerAngles.y, maxSpeed, grounded, grounded, env.TargetColorRgb);
             foreach (float o in obs) sensor.AddObservation(o);
-        }
-
-        // True iff the forward ray fan currently detects the goal tag. Gates the distance-shaping on the agent's
-        // ACTUAL perception (rays) instead of a privileged omnidirectional Linecast, so shaping is positive-
-        // dominated ("see the goal ahead + approach -> reward") and never scores movement toward a goal the policy
-        // cannot observe -- which had made FREEZING the optimal policy (advisor, 2026-07-14).
-        private bool GoalInForwardRays()
-        {
-            if (_fwdRays == null || _goalTagIdx < 0) return false;
-            var output = RayPerceptionSensor.Perceive(_fwdRays.GetRayPerceptionInput(), false);
-            var outs = output.RayOutputs;
-            for (int i = 0; i < outs.Length; i++)
-                if (outs[i].HasHit && outs[i].HitTagIndex == _goalTagIdx) return true;
-            return false;
         }
 
         public override void OnActionReceived(ActionBuffers actions)
@@ -93,13 +79,15 @@ namespace NavSim.Runtime
             Vector3 pos = transform.position;
             float dist = Vector3.Distance(pos, env.GoalPositionFor(this));
             bool fellInPit = LocomotionMath.FellInPit(pos.y, env.KillPlaneY);
-            // A same-step pit fall VOIDS the reach (pit-first precedence): the fall is the outcome, so no
-            // goal bonus and no goal respawn fire. Guards against horizontal ReachedGoal firing while the
-            // agent drops through a hole directly under an (elevated) goal.
-            bool reached = !fellInPit && env.ReachedGoal(this);
-            bool goalVisible = GoalInForwardRays(); // shaping gated on PERCEIVED (forward-ray) goal, not privileged LoS
+            // Precedence: pit-first (a same-step fall voids the outcome), then decoy, then the cued reach.
+            bool touchingDecoy = !fellInPit && env.TouchedDecoy(this);
+            bool decoyEnter = touchingDecoy && !_wasOnDecoy;  // ONE-SHOT on entry
+            _wasOnDecoy = touchingDecoy;
+            bool reached = !fellInPit && !touchingDecoy && env.ReachedGoal(this);
+            bool goalVisible = env.TargetPerceivable(this);   // shaping gated on the agent's ACTUAL forward FOV
 
             float step = RewardCalculator.Step(_prevDist, dist, reached, reward, goalVisible, fellInPit);
+            if (decoyEnter) step -= reward.decoyPenalty;
             var neighborDist = CrowdMath.NeighborDistances(pos, env.MoverPositions(), reward.congestionRadius);
             float moverCost = RewardCalculator.CrowdPenalty(neighborDist, reward);
             AddReward(step - moverCost);
@@ -110,9 +98,14 @@ namespace NavSim.Runtime
                 _vY = 0f;
                 dist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
             }
+            else if (decoyEnter && DecoyRules.DecoyEndsEpisode(env.CurrentLevel))
+            {
+                EndEpisode(); // hard schedule (L1+): a wrong pick ends the episode (on ENTRY)
+                return;
+            }
             else if (reached)
             {
-                // Continuous respawn: fresh goal, NO EndEpisode.
+                // Continuous respawn: fresh triad + cue, NO EndEpisode.
                 env.NotifyGoalReached();
                 env.RespawnGoal(this);
                 dist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
