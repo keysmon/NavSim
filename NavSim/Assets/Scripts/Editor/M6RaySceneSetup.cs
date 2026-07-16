@@ -94,7 +94,8 @@ public static class M6RaySceneSetup
             bp.BrainParameters.VectorObservationSize = 8;
         }
 
-        // (5) env: ray arms have NO camera (scalar-cone shaping gate); tagGoalsByColor selects the arm.
+        // (5) env: ray arms have NO camera (agentCamera==null routes TargetPerceivable to the SENSOR-TRUTH gate —
+        //     an actual goal-detecting ray hit; no angular-cone params to pin). tagGoalsByColor selects the arm.
         var so = new SerializedObject(env);
         so.FindProperty("agentCamera").objectReferenceValue = null;
         so.FindProperty("tagGoalsByColor").boolValue = byColor;

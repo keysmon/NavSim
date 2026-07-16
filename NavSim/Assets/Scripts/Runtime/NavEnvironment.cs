@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
 
 namespace NavSim.Runtime
 {
@@ -30,8 +31,6 @@ namespace NavSim.Runtime
         [Header("Perception (M6)")]
         [Tooltip("PIXEL arm ONLY: real-frustum shaping gate. Leave null on ray arms.")]
         [SerializeField] private Camera agentCamera;
-        [Tooltip("RAY arms: shaping-gate cone half-angle (= 180-deg fan half). Ignored when agentCamera is set.")]
-        [SerializeField] private float forwardHalfAngleDeg = 90f;
         [Tooltip("false: all goals share the \"goal\" tag (pixel/ray1). true: per-color \"goal_c{k}\" tags (rayC).")]
         [SerializeField] private bool tagGoalsByColor = false;
 
@@ -56,6 +55,7 @@ namespace NavSim.Runtime
 
         private int _appliedLevel = -1;
         private Transform[] _goals;                       // runtime triad: _goals[0] == `goal` template + 2 siblings
+        private RayPerceptionSensorComponent3D[] _agentFans; // RAY arms: cached goal-detecting fans for the sensor-truth gate
         private GoalPalette.GoalAssignment _assign;
         private System.Random _colorRng = new System.Random();
 
@@ -235,23 +235,60 @@ namespace NavSim.Runtime
             return d.ToArray();
         }
 
-        // Shaping gate: the CUED target is in the agent's ACTUAL forward perceptual field AND unoccluded AND in
-        // range. INVARIANT (advisor): the gate must be a SUBSET of the arm's true FOV — err NARROW (a too-wide
-        // gate rewards reducing distance to a target the sensor can't see -> the M5 freeze trap). PIXEL arm
-        // (agentCamera set) tests the REAL camera frustum (handles H/V FOV + tilt + elevation); RAY arms use a
-        // scalar forward cone at the fan half-angle.
+        // Shaping gate: the CUED target is genuinely in the agent's ACTUAL sensor field this step. INVARIANT
+        // (advisor): the gate must be a SUBSET of the arm's true FOV — err NARROW (a too-wide gate rewards reducing
+        // distance to a target the sensor can't see -> the M5 freeze trap). PIXEL arm (agentCamera set) tests the
+        // REAL camera frustum (manual H/V FOV; handles tilt + elevation); RAY arms use the SENSOR-TRUTH gate — an
+        // actual goal-detecting ray hit (an angular proxy is distance-fragile for the fans; Stage-A proved it leaks).
         public bool TargetPerceivable(NavAgent a)
         {
-            Vector3 eye = a.transform.position + Vector3.up * eyeHeight;
             Vector3 tp = Target.position;
-            if (Vector3.Distance(eye, tp) > DifficultyMapper.SightRange) return false;
-            if (Physics.Linecast(eye, tp, staticGeometryMask)) return false; // occluded by static geometry
+            Vector3 eye = a.transform.position + Vector3.up * eyeHeight;
+            if (Vector3.Distance(eye, tp) > DifficultyMapper.SightRange) return false; // range prune (<= fan ray reach; the sensor perceive below is authoritative)
             if (agentCamera != null)
             {
-                Vector3 v = agentCamera.WorldToViewportPoint(tp);
-                return v.z > 0f && v.x >= 0f && v.x <= 1f && v.y >= 0f && v.y <= 1f; // inside the real frustum
+                // PIXEL arm: static occlusion + the REAL square-sensor frustum via a manual camera-local H/V FOV
+                // check — NOT WorldToViewportPoint. Its projection uses Camera.aspect, which OUTSIDE the sensor's
+                // render call is the screen/game-view aspect (Stage-A A1 measured 1.333, a 4:3 default), NOT the
+                // 84x84 sensor's 1:1 — that made the gate ~106deg wide horizontally vs the CNN's real 90deg (a
+                // horizontal freeze trap). Camera.fieldOfView is the VERTICAL FOV; the SQUARE sensor makes
+                // horizontal FOV == vertical.
+                if (Physics.Linecast(eye, tp, staticGeometryMask)) return false;    // occluded by static geometry
+                Vector3 local = agentCamera.transform.InverseTransformPoint(tp);
+                if (local.z <= 0f) return false;                                   // behind the camera
+                float half = agentCamera.fieldOfView * 0.5f;                       // square sensor: horizontal half == vertical half
+                float vAng = Mathf.Atan2(Mathf.Abs(local.y), local.z) * Mathf.Rad2Deg;
+                float hAng = Mathf.Atan2(Mathf.Abs(local.x), local.z) * Mathf.Rad2Deg;
+                return vAng <= half && hAng <= half;
             }
-            return Vector3.Angle(a.transform.forward, tp - eye) <= forwardHalfAngleDeg; // ray-fan cone
+            // RAY arms: SENSOR-TRUTH gate — shaping fires iff a goal-detecting ray ACTUALLY registers the cued
+            // target this step. Any angular proxy is provably distance-fragile here: the fans' reach envelope is
+            // NOT a clean cone (a fixed-size goal + spherecast subtend more angle up close, less far away; and the
+            // gate eye != the 0.9 fan origin), so a fixed +-cone over-fired for elevated goals at long range
+            // (Stage-A grid: 18 freeze leaks at D=8-14, h~3m) AND starved close flat goals. Perceiving the real
+            // fans removes every approximation — the gate becomes EXACTLY what the sensor observes: range,
+            // occlusion, and the discrete-ray/spherecast envelope are all handled by the rays themselves.
+            if (_agentFans == null)
+            {
+                _agentFans = a.GetComponents<RayPerceptionSensorComponent3D>();
+                if (_agentFans.Length == 0)
+                    Debug.LogWarning("[NavEnvironment] TargetPerceivable: a ray arm (agentCamera==null) has NO " +
+                                     "RayPerceptionSensorComponent3D — the shaping gate will never fire (silent " +
+                                     "starvation). Check the scene's sensor setup.");
+            }
+            var targetGo = Target.gameObject;
+            foreach (var fan in _agentFans)
+            {
+                var input = fan.GetRayPerceptionInput();
+                // Perceive on the SAME cast path the observation uses (mirror the fan's batched flag) so gate ==
+                // what the sensor encodes BY CONSTRUCTION, not merely when the package's unbatched default holds.
+                var outs = RayPerceptionSensor.Perceive(input, input.UseBatchedRaycasts).RayOutputs;
+                for (int i = 0; i < outs.Length; i++)
+                    // HitTagIndex >= 0 == a DETECTABLE-tag hit (so it's in the observation) — excludes an untagged
+                    // physical hit by the terrain-only down-fan on the goal collider.
+                    if (outs[i].HasHit && outs[i].HitTagIndex >= 0 && outs[i].HitGameObject == targetGo) return true;
+            }
+            return false;
         }
 
         // Continuous respawn on reaching the cued target: a fresh triad + cue on the SAME baked terrain (no EndEpisode).
