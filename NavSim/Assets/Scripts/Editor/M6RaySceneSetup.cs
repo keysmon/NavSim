@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using Unity.MLAgents.Sensors;
@@ -146,5 +147,31 @@ public static class M6RaySceneSetup
     {
         go.layer = layer;
         foreach (Transform c in go.transform) SetLayerRecursively(c.gameObject, layer);
+    }
+
+    // StandaloneOSX training players for the ray arms (mirrors M6PixelSceneSetup.BuildPlayer). Ray arms have no
+    // camera, so mlagents-learn may run them headless with -nographics; the build itself is standard.
+    //   Unity -batchmode -projectPath NavSim -executeMethod M6RaySceneSetup.BuildRay1Player -logFile -
+    public static void BuildRay1Player() => BuildArmPlayer("Assets/Scenes/Training_ray1.unity", "Builds/M6Ray1Train.app");
+    public static void BuildRayCPlayer() => BuildArmPlayer("Assets/Scenes/Training_rayc.unity", "Builds/M6RayCTrain.app");
+
+    private static void BuildArmPlayer(string scene, string outRel)
+    {
+        try
+        {
+            if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneOSX)
+                EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneOSX);
+            var opts = new BuildPlayerOptions
+            {
+                scenes = new[] { scene },
+                locationPathName = System.IO.Path.GetFullPath(Application.dataPath + "/../" + outRel),
+                target = BuildTarget.StandaloneOSX,
+                options = BuildOptions.None
+            };
+            var summary = BuildPipeline.BuildPlayer(opts).summary;
+            Debug.Log("[M6RayScene] BuildPlayer result=" + summary.result + " errors=" + summary.totalErrors + " out=" + outRel);
+            EditorApplication.Exit(summary.result == BuildResult.Succeeded ? 0 : 1);
+        }
+        catch (System.Exception e) { Debug.LogError("[M6RayScene] BuildArmPlayer FAILED: " + e); EditorApplication.Exit(2); }
     }
 }
