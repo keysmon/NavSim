@@ -48,6 +48,10 @@ namespace NavSim.Runtime
         public int PitFalls { get; private set; }        // eval instrumentation (eval reads deltas)
         public float GoalRadius => goalRadius;            // eval measures reach against a captured target0
         public int CurrentLevel => _appliedLevel < 0 ? 0 : _appliedLevel; // read by NavAgent for DecoyRules
+        // The eval harness sets this so a decoy touch does NOT trigger EndEpisode (which would synchronously re-roll
+        // the arena + cue mid-episode and corrupt the harness's geometric outcome detection against captured values).
+        // The harness OWNS the episode boundary + detects reach-vs-decoy itself, always hard. TRAINING leaves it false.
+        public bool EvalMode { get; set; }
 
         // The per-episode RGB target-color cue (given identically to every arm; the sole "which color is target"
         // channel). Read by NavAgent.CollectObservations.
