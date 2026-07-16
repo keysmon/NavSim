@@ -27,6 +27,14 @@ namespace NavSim.Runtime
         [SerializeField] private float arenaHalf = DifficultyMapper.M5ArenaHalf;
         [Tooltip("3-D reach radius. Elevated goals need vertical slack (capsule centre sits above the platform).")]
         [SerializeField] private float goalRadius = 1.5f;
+        [Tooltip("Radius of the rigid 120-deg goal ring around the cluster centre. The 3 goals then sit " +
+                 "goalClusterSpread*sqrt(3) apart (2.6 -> ~4.5u > 2*goalRadius, so decoy detection stays clean) AND " +
+                 "tight enough to be CO-VISIBLE in one 90-deg camera frame — the pixel arm can compare colours in a " +
+                 "single glance (B1 fix, user 2026-07-16). Removes the ray(180)>camera(90) co-visibility confound.")]
+        [SerializeField] private float goalClusterSpread = 2.6f;
+        [Tooltip("Min spawn->cluster-centre distance (keeps the cluster off the spawn; with GoalMaxDist it also caps " +
+                 "how far/small the co-visible goals render — close enough at L0 that colours are distinguishable).")]
+        [SerializeField] private float clusterMinDist = 4.5f;
 
         [Header("Perception (M6)")]
         [Tooltip("PIXEL arm ONLY: real-frustum shaping gate. Leave null on ray arms.")]
@@ -52,6 +60,16 @@ namespace NavSim.Runtime
         // the arena + cue mid-episode and corrupt the harness's geometric outcome detection against captured values).
         // The harness OWNS the episode boundary + detects reach-vs-decoy itself, always hard. TRAINING leaves it false.
         public bool EvalMode { get; set; }
+
+        // TRAIN-only decoy hardness (spec §7 soften->harden; user 2026-07-16). SOFT during a step-based WARMUP so the
+        // agent learns nav + the cue->colour map while episodes survive, then HARD (a wrong-colour pick ends the
+        // episode) so training rewards CUED-FIRST — aligning the train objective to the ALWAYS-hard eval (soft-only
+        // training rewards cheap goal-sweeping, which the hard eval scores as decoy_visit). Warmup length =
+        // `decoy_warmup` env-parameter (default 300k steps); OR the pre-existing level rule (L1+ hard even in warmup).
+        // Eval bypasses this via EvalMode (the harness owns the boundary).
+        public bool DecoyHard =>
+            Academy.Instance.TotalStepCount >= Academy.Instance.EnvironmentParameters.GetWithDefault("decoy_warmup", 300000f)
+            || DecoyRules.DecoyEndsEpisode(CurrentLevel);
 
         // The per-episode RGB target-color cue (given identically to every arm; the sole "which color is target"
         // channel). Read by NavAgent.CollectObservations.
@@ -118,7 +136,7 @@ namespace NavSim.Runtime
             {
                 terrain.Generate(lvl, Vector3.zero, Vector3.zero); // bake structure; real spawn/goals chosen below
                 if (!SampleGround(RandomXZ(), out Vector3 spawn)) continue;
-                if (!TryPickGoal(lvl, spawn, arenaHalf * 0.5f, GoalMaxDist(level), out Vector3 _)) continue; // terrain is goal-placeable
+                if (!TryPickGoal(lvl, spawn, clusterMinDist, GoalMaxDist(level), out Vector3 _)) continue; // terrain is goal-placeable
                 PlaceAt(agent, spawn);
                 PlaceTriad(lvl, spawn, level);
                 agent.NotifyGoalMoved();
@@ -142,37 +160,64 @@ namespace NavSim.Runtime
         // Decoys share the target's placement constraints so geometry never distinguishes them.
         private void PlaceTriad(TerrainLevel lvl, Vector3 from, int level)
         {
-            for (int i = 0; i < 3; i++)
+            // Place the 3 goals on a RIGID 120-deg ring of radius goalClusterSpread around a cluster centre, with a
+            // SINGLE random rotation for the whole triad. Spacing = goalClusterSpread*sqrt(3) ≈ 4.5u (> 2*goalRadius
+            // BY CONSTRUCTION — no rejection sampling, no last-resort spam) keeps decoy detection clean; the tight ring
+            // makes all 3 goals CO-VISIBLE in one 90-deg camera frame so the pixel arm can compare colours in a single
+            // glance. Ring RIGIDITY is invisible to learning (colour is decorrelated from slot via GoalPalette, and the
+            // centre + rotation + spawn are already random per episode, so the policy never sees the same layout twice).
+            // Arm-symmetric world change (user 2026-07-16); decoys share the target's constraints — geometry never
+            // distinguishes them. Snap each goal to ground + require reachable (any could be the cued target); re-roll
+            // the rotation, then a fresh centre, on failure.
+            Vector3 centre = PickClusterCentre(lvl, from, level);
+            bool placed = false;
+            for (int tries = 0; tries < 24 && !placed; tries++)
             {
-                bool placed = false;
-                for (int t = 0; t < 20 && !placed; t++)
-                    if (TryPickGoal(lvl, from, arenaHalf * 0.5f, GoalMaxDist(level), out Vector3 gp) && FarFromPlaced(gp, i))
-                    { _goals[i].position = gp; placed = true; }
-                if (!placed)
-                    for (int t = 0; t < 20 && !placed; t++) // relaxed: any reachable ground, far enough
-                        if (SampleGround(RandomXZ(), out Vector3 gp) && terrain.IsReachable(from, gp) && FarFromPlaced(gp, i))
-                        { _goals[i].position = gp; placed = true; }
-                // Last resort (design-unreachable in practice): KEEP SPACING even if reachability can't be
-                // guaranteed — a co-located target+decoy is unwinnable (decoy-before-reach precedence). Warn so
-                // it is observable if it ever fires in a real run.
-                if (!placed)
-                    for (int t = 0; t < 20 && !placed; t++)
-                        if (SampleGround(RandomXZ(), out Vector3 lr) && FarFromPlaced(lr, i))
-                        { _goals[i].position = lr; placed = true; }
-                if (!placed)
-                {
-                    Vector3 baseP = SampleGround(Vector3.zero, out Vector3 c) ? c : from;
-                    _goals[i].position = baseP + new Vector3((i - 1) * goalRadius * 3f, 0f, 0f); // forced spacing
-                    Debug.LogWarning("[NavEnvironment] PlaceTriad last-resort for goal " + i + " (rare) — forced-spaced placement.");
-                }
+                if (tries > 0 && tries % 6 == 0) centre = PickClusterCentre(lvl, from, level); // periodically re-roll the centre
+                placed = TryRing(from, centre, requireReachable: true);
+            }
+            if (!placed)
+            {
+                // Design-unreachable in practice: place the ring ignoring reachability (spacing preserved). Warn.
+                TryRing(from, centre, requireReachable: false);
+                Debug.LogWarning("[NavEnvironment] PlaceTriad ring last-resort — no reachable rotation found (rare).");
             }
             AssignColorsAndTarget();
         }
 
-        private bool FarFromPlaced(Vector3 p, int upto)
+        // A close, reachable cluster centre. Elevated levels keep a platform-top (elevation fidelity is a separate
+        // §10.8 follow-up — siblings currently snap to the surrounding ground); flat levels use a distance-controlled
+        // random-bearing point at a radius in [clusterMinDist, GoalMaxDist] so the cluster is reliably close + co-visible.
+        private Vector3 PickClusterCentre(TerrainLevel lvl, Vector3 from, int level)
         {
-            for (int j = 0; j < upto; j++)
-                if (Vector3.Distance(p, _goals[j].position) < goalRadius * 3f) return false;
+            if (lvl.GoalElevated)
+            {
+                if (terrain.RandomPlatformTop(out Vector3 pt)) return pt;
+                SampleGround(from, out pt); return pt;
+            }
+            for (int t = 0; t < 40; t++)
+            {
+                float ang = Random.value * (2f * Mathf.PI), r = Random.Range(clusterMinDist, GoalMaxDist(level));
+                if (SampleGround(from + new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r), out Vector3 cg)
+                    && terrain.IsReachable(from, cg)) return cg;
+            }
+            return from;
+        }
+
+        // Place the 3 goals on a 120-deg ring (single random rotation) around the centre, snapped to ground. Returns
+        // true iff every goal snapped AND (when required) is reachable from the spawn; on false, _goals is left in a
+        // partial state that the caller either retries over or accepts as the (warned) last resort.
+        private bool TryRing(Vector3 from, Vector3 centre, bool requireReachable)
+        {
+            float th0 = Random.value * (2f * Mathf.PI);
+            for (int i = 0; i < 3; i++)
+            {
+                float a = th0 + i * (2f * Mathf.PI / 3f);
+                Vector3 p = centre + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * goalClusterSpread;
+                bool ground = SampleGround(p, out Vector3 g);
+                _goals[i].position = ground ? g : p;
+                if (requireReachable && (!ground || !terrain.IsReachable(from, g))) return false;
+            }
             return true;
         }
 
@@ -208,7 +253,7 @@ namespace NavSim.Runtime
         {
             switch (level)
             {
-                case 0: return 9f;    // warmup: always well inside sight 15
+                case 0: return 7f;    // warmup: close cluster so co-visible goals render big enough to tell apart
                 case 1: return 12f;
                 case 2: return 16f;   // elevated; generous so platform-top placement isn't over-constrained
                 default: return 999f; // L3+: unbounded full-arena search

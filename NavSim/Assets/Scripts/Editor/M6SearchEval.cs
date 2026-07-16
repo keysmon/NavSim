@@ -257,7 +257,7 @@ public static class M6SearchEval
 
     // Pure, always-HARD outcome resolution on captured VALUES — the single source of truth for both RunEpisode and
     // the Selftest. Decoy is checked FIRST so a tie (agent within radius of both) resolves to the (hard) failure,
-    // the pessimistic/honest call. Goals are placed >goalRadius*3 apart, so ties are effectively impossible anyway.
+    // the pessimistic/honest call. Goals sit ~goalClusterSpread*sqrt(3) (~4.5u) apart, so ties are effectively impossible.
     private static Outcome Resolve(NavEnvironment env, Vector3 pos, Vector3 target0, Vector3[] decoy0)
     {
         if (WithinGoal(env, pos, decoy0[0]) || WithinGoal(env, pos, decoy0[1])) return Outcome.Decoy;

@@ -98,11 +98,12 @@ namespace NavSim.Runtime
                 _vY = 0f;
                 dist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
             }
-            else if (decoyEnter && !env.EvalMode && DecoyRules.DecoyEndsEpisode(env.CurrentLevel))
+            else if (decoyEnter && !env.EvalMode && env.DecoyHard)
             {
-                // TRAINING hard schedule (L1+): a wrong pick ends the episode (on ENTRY). SUPPRESSED in eval
-                // (env.EvalMode) — the eval harness owns the boundary + detects the decoy geometrically, so an
-                // EndEpisode here would re-roll the arena/cue mid-episode and corrupt the measurement.
+                // TRAINING hard schedule: a wrong-colour pick ends the episode (on ENTRY) once past the soft warmup
+                // (or at L1+) — trains CUED-FIRST, matching the always-hard eval. SUPPRESSED in eval (env.EvalMode):
+                // the harness owns the boundary + detects the decoy geometrically, so an EndEpisode here would re-roll
+                // the arena/cue mid-episode and corrupt the measurement.
                 EndEpisode();
                 return;
             }
