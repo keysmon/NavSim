@@ -1,8 +1,8 @@
-using System;
+using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
 using NavSim.Runtime;
-using Random = System.Random; // disambiguate: UnityEngine.Random is also in scope via `using UnityEngine;`
+using Random = System.Random; // disambiguate vs UnityEngine.Random
 
 namespace NavSim.Tests.EditMode
 {
@@ -33,6 +33,49 @@ namespace NavSim.Tests.EditMode
         }
 
         [Test]
+        public void Assign_TargetIsAlwaysTheFixedColor()
+        {
+            // M6 v2: the target is FIXED (red = Colors[TargetColorIndex]) every episode - no cue exists.
+            for (int s = 0; s < 100; s++)
+            {
+                var a = GoalPalette.Assign(new Random(s));
+                Assert.AreEqual(GoalPalette.TargetColorIndex, a.ColorIndices[a.TargetSlot],
+                    $"seed {s}: target slot is not the fixed target color");
+            }
+        }
+
+        [Test]
+        public void Assign_DecoysAreDistinctAndNeverTheTargetColor()
+        {
+            for (int s = 0; s < 100; s++)
+            {
+                var a = GoalPalette.Assign(new Random(s));
+                var decoys = new List<int>();
+                for (int i = 0; i < 3; i++) if (i != a.TargetSlot) decoys.Add(a.ColorIndices[i]);
+                Assert.AreEqual(2, decoys.Count, $"seed {s}");
+                Assert.AreNotEqual(decoys[0], decoys[1], $"seed {s}: duplicate decoy colors");
+                Assert.AreNotEqual(GoalPalette.TargetColorIndex, decoys[0], $"seed {s}: decoy 0 is the target color");
+                Assert.AreNotEqual(GoalPalette.TargetColorIndex, decoys[1], $"seed {s}: decoy 1 is the target color");
+            }
+        }
+
+        [Test]
+        public void Assign_DecoyPairsVaryAcrossEpisodes()
+        {
+            // Decoys must be a fresh per-episode draw (C(4,2)=6 possible pairs), not a fixed pair.
+            var pairs = new HashSet<string>();
+            for (int s = 0; s < 200; s++)
+            {
+                var a = GoalPalette.Assign(new Random(s));
+                var d = new List<int>();
+                for (int i = 0; i < 3; i++) if (i != a.TargetSlot) d.Add(a.ColorIndices[i]);
+                d.Sort();
+                pairs.Add(d[0] + "," + d[1]);
+            }
+            Assert.GreaterOrEqual(pairs.Count, 4, "decoy colors look fixed, not per-episode random");
+        }
+
+        [Test]
         public void Assign_TargetSlotInRange()
         {
             for (int s = 0; s < 50; s++)
@@ -46,10 +89,12 @@ namespace NavSim.Tests.EditMode
         [Test]
         public void Assign_TargetSlotIsUniformlyDistributed_NotBiasedToOneSlot()
         {
-            // decorrelation guard: target slot must not be fixed (else "target = slot 0" leaks to a ray agent)
+            // R1 decorrelation guard: red's SLOT must be uniform BY CONSTRUCTION (slot 0 is the scene-template
+            // goal and last-resort placement is slot-ordered, so "red always slot 0" would correlate red with
+            // placement artifacts). This passes only if Assign shuffles colors across slots.
             int[] counts = new int[3];
             for (int s = 0; s < 300; s++) counts[GoalPalette.Assign(new Random(s)).TargetSlot]++;
-            foreach (int c in counts) Assert.Greater(c, 50, "a slot is (near) never the target — biased");
+            foreach (int c in counts) Assert.Greater(c, 50, "a slot is (near) never the target - biased");
         }
 
         [Test]
@@ -69,10 +114,11 @@ namespace NavSim.Tests.EditMode
         }
 
         [Test]
-        public void TargetColor_IsTheColorAtTheTargetSlot()
+        public void TargetColor_IsAlwaysTheFixedRed()
         {
-            var a = GoalPalette.Assign(new Random(7));
-            Assert.AreEqual(GoalPalette.Colors[a.ColorIndices[a.TargetSlot]], GoalPalette.TargetColor(a));
+            for (int s = 0; s < 20; s++)
+                Assert.AreEqual(GoalPalette.Colors[GoalPalette.TargetColorIndex],
+                    GoalPalette.TargetColor(GoalPalette.Assign(new Random(s))));
         }
     }
 }
