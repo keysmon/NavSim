@@ -5,11 +5,12 @@ using Unity.MLAgents.Sensors;
 
 namespace NavSim.Runtime
 {
-    // M6 single searcher on 3D terrain. CharacterController + manual gravity; hybrid action space (forward, turn
-    // continuous; jump discrete). Cued visual object-goal search: obs carry a persistent RGB target-color cue;
-    // reaching the CUED goal respawns a fresh triad (continuous respawn, no EndEpisode); touching a DECOY costs
-    // reward and — under the hard schedule (L1+, DecoyRules) — ends the episode; a pit fall is penalised then the
-    // agent is teleported to safe ground (memory + episode continue).
+    // M6 v2 single searcher on 3D terrain. CharacterController + manual gravity; hybrid action space (forward,
+    // turn continuous; jump discrete). FIXED-TARGET visual discrimination: the target is always the red goal
+    // (GoalPalette.TargetColorIndex) among 3 geometrically identical goals - no cue in the obs; reaching the
+    // TARGET goal respawns a fresh triad (continuous respawn, no EndEpisode); touching a DECOY costs reward
+    // and - under the hard schedule (DecoyHard) - ends the episode; a pit fall is penalised then the agent is
+    // teleported to safe ground (memory + episode continue).
     [RequireComponent(typeof(CharacterController))]
     public class NavAgent : Agent
     {
@@ -36,7 +37,7 @@ namespace NavSim.Runtime
             // would break M5's single-"goal"-tag ray gate.
         }
 
-        // Re-sync the shaping baseline after the ARENA relocates this agent's (cued) goal — triad respawn, safe
+        // Re-sync the shaping baseline after the ARENA relocates this agent's (target) goal — triad respawn, safe
         // respawn, lesson change. Idempotent with OnEpisodeBegin and the reached/pit blocks. Advisor Finding A (M3).
         public void NotifyGoalMoved() =>
             _prevDist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
@@ -52,10 +53,10 @@ namespace NavSim.Runtime
         public override void CollectObservations(VectorSensor sensor)
         {
             bool grounded = _cc.isGrounded;
-            // jumpReady == grounded: a jump is only launchable from the ground (no double-jump). The RGB cue is
-            // the persistent "which color is the target" channel, identical across all arms.
+            // jumpReady == grounded: a jump is only launchable from the ground (no double-jump). NO colour cue:
+            // the target is fixed (red) - which goal is the target is for the SENSOR to determine.
             float[] obs = ObservationBuilder.Build(
-                _cc.velocity, transform.eulerAngles.y, maxSpeed, grounded, grounded, env.TargetColorRgb);
+                _cc.velocity, transform.eulerAngles.y, maxSpeed, grounded, grounded);
             foreach (float o in obs) sensor.AddObservation(o);
         }
 
@@ -79,7 +80,7 @@ namespace NavSim.Runtime
             Vector3 pos = transform.position;
             float dist = Vector3.Distance(pos, env.GoalPositionFor(this));
             bool fellInPit = LocomotionMath.FellInPit(pos.y, env.KillPlaneY);
-            // Precedence: pit-first (a same-step fall voids the outcome), then decoy, then the cued reach.
+            // Precedence: pit-first (a same-step fall voids the outcome), then decoy, then the target reach.
             bool touchingDecoy = !fellInPit && env.TouchedDecoy(this);
             bool decoyEnter = touchingDecoy && !_wasOnDecoy;  // ONE-SHOT on entry
             _wasOnDecoy = touchingDecoy;
@@ -101,15 +102,15 @@ namespace NavSim.Runtime
             else if (decoyEnter && !env.EvalMode && env.DecoyHard)
             {
                 // TRAINING hard schedule: a wrong-colour pick ends the episode (on ENTRY) once past the soft warmup
-                // (or at L1+) — trains CUED-FIRST, matching the always-hard eval. SUPPRESSED in eval (env.EvalMode):
+                // (or at L1+) — trains TARGET-FIRST, matching the always-hard eval. SUPPRESSED in eval (env.EvalMode):
                 // the harness owns the boundary + detects the decoy geometrically, so an EndEpisode here would re-roll
-                // the arena/cue mid-episode and corrupt the measurement.
+                // the arena mid-episode and corrupt the measurement.
                 EndEpisode();
                 return;
             }
             else if (reached)
             {
-                // Continuous respawn: fresh triad + cue, NO EndEpisode.
+                // Continuous respawn: fresh triad, NO EndEpisode.
                 env.NotifyGoalReached();
                 env.RespawnGoal(this);
                 dist = Vector3.Distance(transform.position, env.GoalPositionFor(this));

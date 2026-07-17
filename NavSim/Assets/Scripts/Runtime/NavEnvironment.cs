@@ -6,14 +6,15 @@ using Unity.MLAgents.Sensors;
 
 namespace NavSim.Runtime
 {
-    // Single-learner 3D terrain-search arena. M6 adds CUED VISUAL OBJECT-GOAL SEARCH on top of the M5 terrain:
-    // instead of one goal there are THREE geometrically identical goals differing only in color; one color is the
-    // per-episode TARGET (announced to the agent via a persistent RGB cue), the other two are decoys. Reaching the
-    // cued goal = success; touching a decoy = failure (soften->harden, DecoyRules). The three goals are a RUNTIME
-    // pool built from the single scene `goal` TEMPLATE (mirrors MoverController's pool idiom) — no per-arm scene
-    // surgery. Colors are assigned each episode from GoalPalette (target slot decorrelated from position). The
-    // collapsed `difficulty` curriculum drives the M5 terrain ladder; the runtime-baked NavMesh is the solvability
-    // gate + SPL oracle + mover substrate. Plain PPO: one Agent, finite MaxStep, continuous triad respawn.
+    // Single-learner 3D terrain-search arena. M6 v2 adds FIXED-TARGET visual object-goal search on top of the M5
+    // terrain: instead of one goal there are THREE geometrically identical goals differing only in color; one
+    // color is always the TARGET (GoalPalette.TargetColorIndex, fixed - no per-episode announcement), the other
+    // two are decoys. Reaching the target goal = success; touching a decoy = failure (soften->harden, DecoyRules).
+    // The three goals are a RUNTIME pool built from the single scene `goal` TEMPLATE (mirrors MoverController's
+    // pool idiom) — no per-arm scene surgery. Colors are assigned each episode from GoalPalette (target slot
+    // decorrelated from position). The collapsed `difficulty` curriculum drives the M5 terrain ladder; the
+    // runtime-baked NavMesh is the solvability gate + SPL oracle + mover substrate. Plain PPO: one Agent, finite
+    // MaxStep, continuous triad respawn.
     public class NavEnvironment : MonoBehaviour
     {
         [Header("Wiring (assign in Editor)")]
@@ -57,22 +58,22 @@ namespace NavSim.Runtime
         public float GoalRadius => goalRadius;            // eval measures reach against a captured target0
         public int CurrentLevel => _appliedLevel < 0 ? 0 : _appliedLevel; // read by NavAgent for DecoyRules
         // The eval harness sets this so a decoy touch does NOT trigger EndEpisode (which would synchronously re-roll
-        // the arena + cue mid-episode and corrupt the harness's geometric outcome detection against captured values).
+        // the arena mid-episode and corrupt the harness's geometric outcome detection against captured values).
         // The harness OWNS the episode boundary + detects reach-vs-decoy itself, always hard. TRAINING leaves it false.
         public bool EvalMode { get; set; }
 
         // TRAIN-only decoy hardness (spec §7 soften->harden; user 2026-07-16). SOFT during a step-based WARMUP so the
-        // agent learns nav + the cue->colour map while episodes survive, then HARD (a wrong-colour pick ends the
-        // episode) so training rewards CUED-FIRST — aligning the train objective to the ALWAYS-hard eval (soft-only
-        // training rewards cheap goal-sweeping, which the hard eval scores as decoy_visit). Warmup length =
+        // agent learns nav + target-colour discrimination while episodes survive, then HARD (a wrong-colour pick
+        // ends the episode) so training rewards TARGET-FIRST — aligning the train objective to the ALWAYS-hard eval
+        // (soft-only training rewards cheap goal-sweeping, which the hard eval scores as decoy_visit). Warmup length =
         // `decoy_warmup` env-parameter (default 300k steps); OR the pre-existing level rule (L1+ hard even in warmup).
         // Eval bypasses this via EvalMode (the harness owns the boundary).
         public bool DecoyHard =>
             Academy.Instance.TotalStepCount >= Academy.Instance.EnvironmentParameters.GetWithDefault("decoy_warmup", 300000f)
             || DecoyRules.DecoyEndsEpisode(CurrentLevel);
 
-        // The per-episode RGB target-color cue (given identically to every arm; the sole "which color is target"
-        // channel). Read by NavAgent.CollectObservations.
+        // The FIXED target colour (always GoalPalette red). INTERNAL knowledge - never observed by the agent;
+        // consumed by the gate/reach logic and the eval pairing fingerprint.
         public Color TargetColorRgb { get; private set; }
 
         private int _appliedLevel = -1;
@@ -156,7 +157,7 @@ namespace NavSim.Runtime
         }
 
         // Place all 3 goals at distinct, reachable, far-enough-apart positions, then assign colors + the target.
-        // Every goal is made reachable (any could become the target), so solvability holds whichever is cued.
+        // Every goal is made reachable (any could become the target), so solvability holds whichever slot is the target.
         // Decoys share the target's placement constraints so geometry never distinguishes them.
         private void PlaceTriad(TerrainLevel lvl, Vector3 from, int level)
         {
@@ -167,7 +168,7 @@ namespace NavSim.Runtime
             // glance. Ring RIGIDITY is invisible to learning (colour is decorrelated from slot via GoalPalette, and the
             // centre + rotation + spawn are already random per episode, so the policy never sees the same layout twice).
             // Arm-symmetric world change (user 2026-07-16); decoys share the target's constraints — geometry never
-            // distinguishes them. Snap each goal to ground + require reachable (any could be the cued target); re-roll
+            // distinguishes them. Snap each goal to ground + require reachable (any could be the target); re-roll
             // the rotation, then a fresh centre, on failure.
             Vector3 centre = PickClusterCentre(lvl, from, level);
             bool placed = false;
@@ -221,8 +222,8 @@ namespace NavSim.Runtime
             return true;
         }
 
-        // Draw 3 distinct colors + a target slot (target slot INDEPENDENT of position, GoalPalette), paint the
-        // goal renderers, set the cue, and (rayC only) tag each goal by its color.
+        // Draw 2 random distinct decoy colours + shuffle colours across slots (fixed red target - GoalPalette v2),
+        // paint the goal renderers, and (rayC only) tag each goal by its colour.
         private void AssignColorsAndTarget()
         {
             _assign = GoalPalette.Assign(_colorRng);
@@ -260,10 +261,10 @@ namespace NavSim.Runtime
             }
         }
 
-        // The CUED target goal's position — NavAgent's shaping/reach all point here.
+        // The TARGET goal's position — NavAgent's shaping/reach all point here.
         public Vector3 GoalPositionFor(NavAgent a) => Target.position;
 
-        // 3-D reach of the CUED target: within goalRadius in ALL axes (an elevated goal requires being ON the platform).
+        // 3-D reach of the TARGET: within goalRadius in ALL axes (an elevated goal requires being ON the platform).
         public bool ReachedGoal(NavAgent a) => Vector3.Distance(a.transform.position, Target.position) < goalRadius;
 
         // Touched a WRONG-color goal this step (episode-ending under the hard schedule; penalty under soft).
@@ -284,7 +285,7 @@ namespace NavSim.Runtime
             return d.ToArray();
         }
 
-        // Shaping gate: the CUED target is genuinely in the agent's ACTUAL sensor field this step. INVARIANT
+        // Shaping gate: the TARGET is genuinely in the agent's ACTUAL sensor field this step. INVARIANT
         // (advisor): the gate must be a SUBSET of the arm's true FOV — err NARROW (a too-wide gate rewards reducing
         // distance to a target the sensor can't see -> the M5 freeze trap). PIXEL arm (agentCamera set) tests the
         // REAL camera frustum (manual H/V FOV; handles tilt + elevation); RAY arms use the SENSOR-TRUTH gate — an
@@ -310,8 +311,8 @@ namespace NavSim.Runtime
                 float hAng = Mathf.Atan2(Mathf.Abs(local.x), local.z) * Mathf.Rad2Deg;
                 return vAng <= half && hAng <= half;
             }
-            // RAY arms: SENSOR-TRUTH gate — shaping fires iff a goal-detecting ray ACTUALLY registers the cued
-            // target this step. Any angular proxy is provably distance-fragile here: the fans' reach envelope is
+            // RAY arms: SENSOR-TRUTH gate — shaping fires iff a goal-detecting ray ACTUALLY registers the target
+            // this step. Any angular proxy is provably distance-fragile here: the fans' reach envelope is
             // NOT a clean cone (a fixed-size goal + spherecast subtend more angle up close, less far away; and the
             // gate eye != the 0.9 fan origin), so a fixed +-cone over-fired for elevated goals at long range
             // (Stage-A grid: 18 freeze leaks at D=8-14, h~3m) AND starved close flat goals. Perceiving the real
@@ -340,7 +341,7 @@ namespace NavSim.Runtime
             return false;
         }
 
-        // Continuous respawn on reaching the cued target: a fresh triad + cue on the SAME baked terrain (no EndEpisode).
+        // Continuous respawn on reaching the target: a fresh triad on the SAME baked terrain (no EndEpisode).
         public void RespawnGoal(NavAgent a)
         {
             int level = _appliedLevel < 0 ? 0 : _appliedLevel;
@@ -351,7 +352,7 @@ namespace NavSim.Runtime
 
         public void NotifyGoalReached() => GoalsReached++;
 
-        // LoS gate to the cued target: within fixed sight AND no STATIC geometry between the agent's eye and it.
+        // LoS gate to the target: within fixed sight AND no STATIC geometry between the agent's eye and it.
         // (Kept for API compatibility; NavAgent's shaping uses TargetPerceivable.)
         public bool GoalVisibleTo(NavAgent a)
         {
