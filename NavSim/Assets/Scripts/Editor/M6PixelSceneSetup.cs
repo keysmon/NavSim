@@ -96,6 +96,7 @@ public static class M6PixelSceneSetup
             var target = EditorSceneManager.GetActiveScene();
             bool ok = EditorSceneManager.SaveScene(target, "Assets/Scenes/Training_pixel.unity", true); // saveAsCopy
             Debug.Log("[M6PixelScene] saved=" + ok + " removedRayFans=" + removed +
+                      " vecObs=" + bp.BrainParameters.VectorObservationSize +
                       " cam(fov=" + Fov + ", pitch=" + PitchDownDeg + ", far=" + FarClip + ") -> Assets/Scenes/Training_pixel.unity");
             EditorApplication.Exit(ok ? 0 : 1);
         }
