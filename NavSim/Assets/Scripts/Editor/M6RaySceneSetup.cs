@@ -15,7 +15,7 @@ using NavSim.Runtime;
 //   - Training_rayc.unity : each goal-bearing fan's "goal" tag is SURGICALLY spliced to goal_c0..goal_c4
 //     (terrain tags wall/obstacle/mover preserved in place) + tagGoalsByColor=true -> rayC is hand-told the
 //     color categories (the declared steelman; its wider ray obs IS the manipulation, not a confound).
-// Both arms keep the 8-float vector obs (proprioception + RGB cue) via NavAgent.CollectObservations.
+// Both arms keep the 5-float proprioceptive vector obs (M6 v2: no cue) via NavAgent.CollectObservations.
 //
 // SELF-VERIFYING: after building each arm the script HARD-ASSERTS the full post-splice DetectableTags per fan
 // (advisor, non-optional) — the surgical splice exists to protect wall/obstacle/mover, so the build FAILS LOUDLY
@@ -86,14 +86,17 @@ public static class M6RaySceneSetup
             f.DetectableTags = new List<string>(tags);
         }
 
-        // (4) BehaviorParameters: vector obs is 8 (proprioception 5 + RGB cue 3); ray obs is separate (sensor-inferred).
+        // (4) BehaviorParameters: vector obs is 5 (proprioception only - M6 v2 fixed target, no cue);
+        // ray obs is separate (sensor-inferred). Read back and hard-fail on mismatch (regen guard).
         var bp = agent.GetComponent<BehaviorParameters>();
         if (bp != null)
         {
             bp.BehaviorName = "NavAgent";
             bp.BehaviorType = BehaviorType.Default;
-            bp.BrainParameters.VectorObservationSize = 8;
+            bp.BrainParameters.VectorObservationSize = 5;
         }
+        if (bp == null || bp.BrainParameters.VectorObservationSize != 5)
+        { Debug.LogError($"[M6RayScene:{arm}] VectorObservationSize != 5 after set"); return false; }
 
         // (5) env: ray arms have NO camera (agentCamera==null routes TargetPerceivable to the SENSOR-TRUTH gate —
         //     an actual goal-detecting ray hit; no angular-cone params to pin). tagGoalsByColor selects the arm.
@@ -139,7 +142,7 @@ public static class M6RaySceneSetup
 
         var scene = EditorSceneManager.GetActiveScene();
         bool saved = EditorSceneManager.SaveScene(scene, outPath, true); // saveAsCopy -> leaves Training.unity untouched
-        Debug.Log($"[M6RayScene:{arm}] saved={saved} fans={fans.Length} tagGoalsByColor={byColor} vecObs=8 -> {outPath}");
+        Debug.Log($"[M6RayScene:{arm}] saved={saved} fans={fans.Length} tagGoalsByColor={byColor} vecObs=5 -> {outPath}");
         return saved;
     }
 

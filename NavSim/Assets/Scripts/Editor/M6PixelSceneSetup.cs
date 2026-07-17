@@ -7,7 +7,7 @@ using Unity.MLAgents.Policies;
 using NavSim.Runtime;
 
 // Phase-3 pixel-arm scene builder. Opens the M5 Training scene, converts the agent from ray-fans to an
-// egocentric RGB CameraSensor, wires env.agentCamera, fixes the vector-obs size to 8, and saves as
+// egocentric RGB CameraSensor, wires env.agentCamera, fixes the vector-obs size to 5, and saves as
 // Training_pixel.unity. Re-runnable (tune camera pose params below + re-run). The SCRIPT is throwaway tooling;
 // the committed artifact is Training_pixel.unity.  Batchmode:
 //   Unity -batchmode -projectPath NavSim -executeMethod M6PixelSceneSetup.Build -logFile -
@@ -75,14 +75,17 @@ public static class M6PixelSceneSetup
             cs.Height = 84;
             cs.Grayscale = false;
 
-            // (4) BehaviorParameters: vector obs is now 8 (proprioception 5 + RGB cue 3); camera obs is separate.
+            // (4) BehaviorParameters: vector obs is 5 (proprioception only - M6 v2 fixed target, no cue);
+            // camera obs is separate. Read back and hard-fail on mismatch (regen guard).
             var bp = agent.GetComponent<BehaviorParameters>();
             if (bp != null)
             {
                 bp.BehaviorName = "NavAgent";
                 bp.BehaviorType = BehaviorType.Default;
-                bp.BrainParameters.VectorObservationSize = 8;
+                bp.BrainParameters.VectorObservationSize = 5;
             }
+            if (bp == null || bp.BrainParameters.VectorObservationSize != 5)
+            { Debug.LogError("[M6PixelScene] VectorObservationSize != 5 after set"); EditorApplication.Exit(1); return; }
 
             // (5) wire env.agentCamera == the sensor camera (private [SerializeField]).
             var so = new SerializedObject(env);
