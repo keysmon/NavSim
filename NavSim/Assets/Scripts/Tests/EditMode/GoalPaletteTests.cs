@@ -89,12 +89,18 @@ namespace NavSim.Tests.EditMode
         [Test]
         public void Assign_TargetSlotIsUniformlyDistributed_NotBiasedToOneSlot()
         {
-            // R1 decorrelation guard: red's SLOT must be uniform BY CONSTRUCTION (slot 0 is the scene-template
-            // goal and last-resort placement is slot-ordered, so "red always slot 0" would correlate red with
-            // placement artifacts). This passes only if Assign shuffles colors across slots.
+            // R1 decorrelation guard, statistically TIGHT: 5000 draws from ONE rng stream (sequentially
+            // seeded fresh rngs can correlate), expected ~1667/slot (sd ~33). Bounds ~4 sd: flake-free,
+            // yet tight enough to catch the classic biased naive shuffle (swap(i, rng.Next(3)) deviates
+            // ~3.7 pp => ~185 counts, well outside), which the old 300-sample count>50 guard missed.
+            var rng = new Random(1234);
             int[] counts = new int[3];
-            for (int s = 0; s < 300; s++) counts[GoalPalette.Assign(new Random(s)).TargetSlot]++;
-            foreach (int c in counts) Assert.Greater(c, 50, "a slot is (near) never the target - biased");
+            for (int s = 0; s < 5000; s++) counts[GoalPalette.Assign(rng).TargetSlot]++;
+            foreach (int c in counts)
+            {
+                Assert.Greater(c, 1533, "target-slot distribution biased (R1 leak risk)");
+                Assert.Less(c, 1800, "target-slot distribution biased (R1 leak risk)");
+            }
         }
 
         [Test]
