@@ -45,7 +45,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.10
+          threshold: 0.20
         value: 0.0
       - name: L1_behind_walls
         completion_criteria:
@@ -53,7 +53,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.30
+          threshold: 0.40
         value: 1.0
       - name: L2_platform_pits
         completion_criteria:
@@ -61,7 +61,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.50
+          threshold: 0.65
         value: 2.0
       - name: L3_hidden_elevated_crowded
         value: 3.0
