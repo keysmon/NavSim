@@ -43,5 +43,20 @@ namespace NavSim.Tests.EditMode
             // InitialSecondsSinceVacated must exceed any dwell we ever use
             Assert.IsFalse(PlateDoor.IsOpen(PlateDoor.InitialSecondsSinceVacated, false, 4.0f, false));
         }
+
+        [Test]
+        public void ExactlyAtDwell_IsClosed()
+        {
+            // The strict-< boundary: at exactly dwellSeconds since vacated, the door is CLOSED.
+            Assert.IsFalse(PlateDoor.IsOpen(2.0f, false, 2.0f, false));
+        }
+
+        [Test]
+        public void Occupied_OpensEvenWithStaleVacatedClock()
+        {
+            // The || plateOccupied clause is load-bearing (call-order independence): a stale large
+            // clock must not keep the door closed while the plate is currently held.
+            Assert.IsTrue(PlateDoor.IsOpen(999f, true, 1.0f, false));
+        }
     }
 }
