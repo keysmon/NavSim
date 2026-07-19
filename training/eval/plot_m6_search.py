@@ -9,8 +9,9 @@ held-out layout set (paired, byte-verified via m6_pairing_<arm>.csv). Produces:
       (1) success rate per difficulty level per arm
       (2) target-goal SPL (fixed red target) per arm, 95% stratified-bootstrap CI (mean, see note)
       (3) decoy-visit rate per difficulty level per arm (discrimination-failure tracker)
-  - training/eval/m6_poi.csv    : probability-of-improvement of pixel over ray1 (PRIMARY) and
-                                  pixel over rayC (STEELMAN), on SPL over the 12 seed x level cells.
+  - training/eval/m6_poi.csv    : probability-of-improvement of pixel over ray1 (PRIMARY),
+                                  pixel over rayC (STEELMAN), and rayC over ray1 (context),
+                                  on SPL over the 12 seed x level cells.
 
 PRE-REGISTERED decision rule (locked before the full run; see .superpowers/sdd/progress.md "Stage B"):
   PRIMARY: PoI(pixel > ray1, SPL) >= 0.75 AND ray1's success CI contains 1/3 (confound-detector holds).
@@ -24,7 +25,7 @@ the ledger and results doc. Mean SPL is the number that is consistent end to end
 
 PoI is computed over the 12 (seed x level) cells per arm -- each cell's mean SPL is treated as one
 independent "run" (a single task) -- matching how the full-ablation headline PoI numbers were derived,
-NOT the raw per-episode matrix M5 used (raw episodes give a materially different, less conservative PoI).
+NOT the raw per-episode matrix M5 used (raw episodes give a materially different, more conservative PoI).
 
 Honesty note: with 3 seeds/arm (12 seed x level cells), rliable's interval estimates + PoI are the tools
 designed for this few-run regime, replacing a bare mean +/- SE.
@@ -138,6 +139,9 @@ def main():
         if "m6_rayc" in order:
             poi_pairs["pixel_vs_rayc_STEELMAN"] = (
                 cell_matrix(df, "m6_pixel", "spl"), cell_matrix(df, "m6_rayc", "spl"))
+    if "m6_rayc" in order and "m6_ray1" in order:
+        poi_pairs["rayc_vs_ray1"] = (
+            cell_matrix(df, "m6_rayc", "spl"), cell_matrix(df, "m6_ray1", "spl"))
     poi, poi_ci = {}, {}
     if poi_pairs:
         poi, poi_ci = rly.get_interval_estimates(poi_pairs, metrics.probability_of_improvement, reps=POI_REPS)

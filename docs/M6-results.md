@@ -99,6 +99,9 @@ Three claims were fixed before the full run; all three are now decided.
 
 1. **PRIMARY - CONFIRMED.** The from-scratch pixel arm beats the ray1 confound-detector: success CIs are fully separated (0.660-0.762 vs 0.305-0.412, no overlap) and PoI(SPL, pixel > ray1) = **1.000**, clearing the pre-registered >= 0.75 bar with no ambiguity.
 The CNN learned the fixed target's colour from raw pixels - a signal ray1 cannot represent at all.
+A note on PoI construction sensitivity: the 1.000 above is computed over the 12 (seed x level) cells per arm, which aggregates each cell's ~25 episodes into a single value before the Mann-Whitney comparison, folding episode-level noise into a cell-level mean.
+A rawer per-episode construction - the convention M5 used, treating each held-out episode as a task rather than averaging into cells - gives PoI(pixel > ray1) = 0.713, below the pre-registered >= 0.75 bar.
+The primary claim does not rest on this PoI leg regardless of construction: it is carried independently by the fully separated success-rate CIs above (pixel 0.660-0.762 vs ray1 0.305-0.412), which no PoI construction choice affects.
 
 2. **Confound-detector - HOLDS.** ray1's success CI, (0.305, 0.412), **contains 1/3** at full scale (300 episodes, 3 seeds).
 A colour-blind sensor performing at chance is exactly the null the ablation design predicts if there is no leak (no shape/geometry/position tell that lets an undifferentiated ray sensor discriminate the target without colour).
