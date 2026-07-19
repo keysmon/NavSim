@@ -35,6 +35,15 @@ namespace NavSim.Runtime
                  "policy: the time-gated version ran 2.5x fast vs trainer steps AND outran the young " +
                  "policy, producing the diagnosed collapse.")]
         [SerializeField] private int c0BootstrapSuccesses = 200;
+        [Tooltip("C1 dwell competence ramp start (seconds): episode-scale so an incidental plate tap during " +
+                 "C0-taught goal-seeking converts into a full C1 success chain, giving lesson-1's sparse " +
+                 "reward its first gradient instead of a closed door reading as a wall (spec [AMENDED " +
+                 "2026-07-19]).")]
+        [SerializeField] private float c1DwellStart = 30f;
+        [Tooltip("C1 dwell ramp horizon: successes at lesson 1 (training only) before the dwell reaches its " +
+                 "target 4.0 s hardness. Competence-ramped down, mirroring c0BootstrapSuccesses. EvalMode " +
+                 "bypasses the ramp entirely (lesson-1 dwell is always 4.0 s under eval).")]
+        [SerializeField] private int c1RampSuccesses = 200;
 
         // ---- Eval surface (Task 6 consumes these names verbatim) ----
         public bool EvalMode { get; set; }
@@ -60,6 +69,9 @@ namespace NavSim.Runtime
         private int _lesson;                                   // 0-3 (C0-C3)
         private int _c0Successes;                              // monotone C0-success counter driving the ramp;
                                                                  // never reset (process-lifetime; C1+ ignores it)
+        private int _c1Successes;                              // monotone C1-success counter driving the dwell
+                                                                 // ramp; never reset; training only (EvalMode
+                                                                 // ignores it - see DwellForLesson)
         private float _vacatedClock = PlateDoor.InitialSecondsSinceVacated;
         private readonly int[] _plateSteps = new int[2];       // per-agent plate-occupied step counts
 
@@ -72,7 +84,17 @@ namespace NavSim.Runtime
         // SeedLayoutRng + SetLesson + ResetEpisode in that order).
         public void SetLesson(int lesson) => _lesson = Mathf.Clamp(lesson, 0, 3);
 
-        private float DwellForLesson => _lesson switch { 1 => 4f, 2 => 2f, _ => 1f }; // C0 uses alwaysOpen
+        // C1 dwell is competence-ramped during training (30s -> 4.0s over c1RampSuccesses lesson-1
+        // successes, mirroring the c0BootstrapSuccesses idiom) so an incidental plate tap converts to a
+        // success while the policy is still C0-naive; EvalMode always measures the full 4.0s hardness.
+        private float DwellForLesson => _lesson switch
+        {
+            1 => EvalMode
+                ? 4f
+                : Mathf.Lerp(c1DwellStart, 4f, Mathf.Clamp01((float)_c1Successes / Mathf.Max(c1RampSuccesses, 1))),
+            2 => 2f,
+            _ => 1f
+        }; // C0 uses alwaysOpen
 
         private void Start()
         {
@@ -136,6 +158,7 @@ namespace NavSim.Runtime
                 if (!EvalMode)
                 {
                     if (_lesson == 0) _c0Successes++;  // competence-gated ramp driver (training C0 only)
+                    if (_lesson == 1) _c1Successes++;  // competence-gated dwell-ramp driver (training C1 only)
                     ApplySplit(ArmRouting.Outcome(_armMode), scorer);
                     EndEpisodePerArm();
                     ResetEpisode();
