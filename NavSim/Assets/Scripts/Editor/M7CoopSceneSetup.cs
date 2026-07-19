@@ -15,6 +15,16 @@ using NavSim.Runtime;
 // and the CoopArena wiring. ONE scene serves all three arms (arm_mode env-param selects routing).
 // Adds tags door/plate to TagManager if missing (wall/goal/agent already exist). SELF-ASSERTS after
 // building (vecObs==6, MaxStep==0 x2, fan tag sets exact, arena refs non-null) - hard-exit on failure.
+//
+// Barred gate (spec amendment 2026-07-19): the door is PHYSICALLY BLOCKING but PERCEPTUALLY
+// RAY-TRANSPARENT - the goal must stay ray-visible through a CLOSED door so the C0-trained
+// goal-seeking drive has something to chase at C1. Implementation is scene-tooling only: the door
+// GameObject lives on a dedicated "DoorBars" layer (added to TagManager next to M6's "Agent" layer),
+// and every fan's RayLayerMask excludes that layer. The collider + "wall"-class physics on the door
+// are untouched, so CharacterController collisions still block passage. The "door" DetectableTag on
+// the fans is now VESTIGIAL (rays never hit the door GameObject, closed or open) - kept only for
+// scene-format stability; the doorOpen obs flag (BuildCoop) is what actually carries passage state
+// to the policy, identically across arms.
 // Batchmode:
 //   Unity -batchmode -projectPath NavSim -executeMethod M7CoopSceneSetup.Build -logFile -
 public static class M7CoopSceneSetup
@@ -24,6 +34,8 @@ public static class M7CoopSceneSetup
     private const float WallHeight = 3f;   // > jump apex (~1.2u) so neither wall nor door can be hopped
     private const float WallThickness = 0.5f;
     private const float DoorwayWidth = 3f; // gap in the divider at x=0; the door block fills it exactly
+    private const string DoorBarsLayerName = "DoorBars";
+    private const int DoorBarsLayerIndex = 10; // next free TagManager layer slot after M6's "Agent" (9)
     private static readonly string[] FanTags = { "wall", "door", "plate", "goal", "agent" };
 
     public static void Build()
@@ -31,6 +43,8 @@ public static class M7CoopSceneSetup
         try
         {
             EnsureTags("door", "plate", "agent");
+            int doorBarsLayer = EnsureLayer(DoorBarsLayerName, DoorBarsLayerIndex);
+            if (doorBarsLayer < 0) return; // EnsureLayer already logged + exited
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             // --- Static world ---
@@ -55,6 +69,7 @@ public static class M7CoopSceneSetup
             GameObject door = MakeCube("Door", new Vector3(0f, WallHeight / 2f, 0f),
                 new Vector3(DoorwayWidth, WallHeight, WallThickness), "door");
             door.transform.SetParent(divider.transform, true);
+            door.layer = doorBarsLayer; // ray-transparent barred gate: physics collider stays, rays skip it
 
             // Plate: a FLAT box zone (a squashed capsule/cylinder collider degenerates to a sphere dome -
             // a box stays flat, so agents step over it, rays still hit it). CoopArena re-places it per lesson.
@@ -70,6 +85,12 @@ public static class M7CoopSceneSetup
             // --- Agents ---
             var agents = new CoopAgent[2];
             for (int i = 0; i < 2; i++) agents[i] = MakeAgent(i, new Vector3(i == 0 ? -2.5f : 2.5f, 0.5f, -7f));
+
+            // Barred gate: exclude DoorBars from every fan's ray mask (6 fans total: 2 agents x 3 each) so
+            // the goal stays ray-visible through the closed door while the door still blocks movement.
+            foreach (var a in agents)
+                foreach (var f in a.GetComponents<RayPerceptionSensorComponent3D>())
+                    f.RayLayerMask &= ~(1 << doorBarsLayer);
 
             // --- Arena wiring (private [SerializeField] fields via SerializedObject, the M6 idiom) ---
             var arenaGo = new GameObject("CoopArena");
@@ -101,6 +122,8 @@ public static class M7CoopSceneSetup
 
             // --- SELF-ASSERTS (hard-exit on failure; regen guard) ---
             var errors = new List<string>();
+            if (door.layer != doorBarsLayer)
+                errors.Add($"door.layer={door.layer} != DoorBars({doorBarsLayer})");
             foreach (var a in agents)
             {
                 var bp = a.GetComponent<BehaviorParameters>();
@@ -112,9 +135,14 @@ public static class M7CoopSceneSetup
                 var fans = a.GetComponents<RayPerceptionSensorComponent3D>();
                 if (fans.Length != 3) errors.Add($"{a.name}: fans={fans.Length} != 3");
                 foreach (var f in fans)
+                {
                     if (!f.DetectableTags.SequenceEqual(FanTags))
                         errors.Add($"{a.name}/{f.SensorName}: tags [{string.Join(",", f.DetectableTags)}] " +
                                    $"!= [{string.Join(",", FanTags)}]");
+                    if ((f.RayLayerMask & (1 << doorBarsLayer)) != 0)
+                        errors.Add($"{a.name}/{f.SensorName}: RayLayerMask includes DoorBars " +
+                                   "(barred-gate ray-transparency broken)");
+                }
             }
             var check = new SerializedObject(arena);
             if (check.FindProperty("agents").arraySize != 2
@@ -133,7 +161,7 @@ public static class M7CoopSceneSetup
 
             bool saved = EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
             Debug.Log($"[M7Coop] saved={saved} vecObs=6 agents=2 fans=3x2 tags=[{string.Join(",", FanTags)}] " +
-                      $"maxStep=0 -> {ScenePath}");
+                      $"maxStep=0 doorBarsLayer={doorBarsLayer} (ray-transparent, physically blocking) -> {ScenePath}");
             EditorApplication.Exit(saved ? 0 : 1);
         }
         catch (System.Exception e)
@@ -223,6 +251,37 @@ public static class M7CoopSceneSetup
         }
         so.ApplyModifiedPropertiesWithoutUndo();
         AssetDatabase.SaveAssets();
+    }
+
+    // Add a named layer to TagManager.asset at a specific slot if not already present (M6's inline "Agent"
+    // idiom, generalized + hardened). Refuses to clobber a slot already holding a DIFFERENT layer name.
+    private static int EnsureLayer(string layerName, int index)
+    {
+        int existing = LayerMask.NameToLayer(layerName);
+        if (existing >= 0) return existing;
+
+        var tmObjs = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset");
+        if (tmObjs.Length == 0)
+        { Debug.LogError("[M7Coop] TagManager.asset not loadable"); EditorApplication.Exit(1); return -1; }
+
+        var tmso = new SerializedObject(tmObjs[0]);
+        var layersProp = tmso.FindProperty("layers");
+        if (layersProp == null || layersProp.arraySize <= index)
+        { Debug.LogError($"[M7Coop] TagManager layers array too small for index {index}"); EditorApplication.Exit(1); return -1; }
+
+        string current = layersProp.GetArrayElementAtIndex(index).stringValue;
+        if (!string.IsNullOrEmpty(current) && current != layerName)
+        {
+            Debug.LogError($"[M7Coop] TagManager layer slot {index} already holds '{current}', refusing to clobber");
+            EditorApplication.Exit(1);
+            return -1;
+        }
+
+        layersProp.GetArrayElementAtIndex(index).stringValue = layerName;
+        tmso.ApplyModifiedPropertiesWithoutUndo();
+        AssetDatabase.SaveAssets();
+        Debug.Log($"[M7Coop] added layer: {layerName} @ index {index}");
+        return index;
     }
 
     // StandaloneOSX training player (ray-only arena -> mlagents may run it --no-graphics). M6 pattern.
