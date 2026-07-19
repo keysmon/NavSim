@@ -10,7 +10,7 @@ namespace NavSim.Tests.EditMode
         public void Build_Length_Is5()
         {
             var obs = ObservationBuilder.Build(Vector3.zero, 0f, 4f, true, true);
-            Assert.AreEqual(5, obs.Length);
+            Assert.AreEqual(5, obs.Length); // proprioception only - M6 v2 has NO cue (fixed target)
         }
 
         [Test]

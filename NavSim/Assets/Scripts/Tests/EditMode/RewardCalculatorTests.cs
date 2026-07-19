@@ -136,5 +136,11 @@ namespace NavSim.Tests.EditMode
                 new System.Collections.Generic.List<float> { 1.8f, 2.0f }, cfg); // 2 congestion-range neighbors
             Assert.Greater(step - crowd, 0f);
         }
+
+        [Test]
+        public void Default_HasDecoyPenalty()
+        {
+            Assert.AreEqual(0.25f, RewardConfig.Default.decoyPenalty, 1e-6f);
+        }
     }
 }

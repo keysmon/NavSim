@@ -7,7 +7,7 @@ in-browser via a Unity WebGL build with in-engine inference (Unity Sentis).
 
 ## Status
 
-Milestones M0-M4 complete. The full pipeline is proven end to end
+Milestones M0-M6 complete. The full pipeline is proven end to end
 (Unity -> ML-Agents -> ONNX -> Sentis -> WebGL -> Vercel):
 
 - **M0** - single-agent pipeline smoke: an agent reaches a visible goal in-browser.
@@ -19,10 +19,18 @@ Milestones M0-M4 complete. The full pipeline is proven end to end
 - **M4** - hidden-goal search: ray length becomes a curriculum axis that fades from visible to hidden, the
   distance-shaping reward is gated on visibility, and the policy gains an LSTM + ICM curiosity; a 4-arm
   ablation (see below) with an interactive goal-visibility slider.
+- **M5** - 3D terrain search: a single learner navigates procedurally generated 3D terrain (ramps, elevated
+  platforms, hazard pits, oblivious movers) to a line-of-sight-gated goal via ray-fan perception; a paired,
+  pre-registered LSTM x RND ablation (see below) found memory gives a modest, real efficiency gain and
+  curiosity gives none.
+- **M6** - visual object-goal search: perception itself becomes the ablated lever - a from-scratch CNN over
+  egocentric RGB pixels vs. ray sensors with/without hand-told colour tags, on a fixed-target colour
+  discrimination task; a paired, pre-registered ablation (see below) found the CNN matches the hand-told
+  upper bound and clearly beats the colour-blind ray sensor.
 
 **Live demo:** https://navsim-webgl.vercel.app
 
-Remaining: M5 (PPO vs MA-POCA benchmark), M6 (CI/CD).
+Remaining: M7 (MA-POCA benchmark), M8 (CI/CD).
 
 ## M3 - Generalization
 
@@ -84,6 +92,47 @@ structure and stumbles onto goals often enough that memory and curiosity are not
 sharper test would shorten the ray further, enlarge the arena, or occlude the goal behind obstacles, and run
 multiple seeds. Regenerate with `Tools/NavSim/Run M4 Search Eval` (writes `m4_search.csv`) and
 `training/eval/plot_m4_search.py` (reads that plus the per-arm `m4_l3_reward.csv`).
+
+## M5 - 3D Terrain Search (LSTM x RND Ablation)
+
+M5 moves off M4's flat 2D arena into procedurally generated 3D terrain: a single `CharacterController`
+learner (gravity + jump) navigates walls, ramp-reachable elevated platforms, hazard pits, and oblivious
+mover-occluders to a line-of-sight-gated goal, perceived through three ray-fans (forward/down/up). A
+`difficulty` curriculum ramps L0 (open, flat, goal visible) -> L3 (hidden, elevated, crowded).
+
+The exit criterion is a 2x2 ablation over two levers (LSTM memory x RND curiosity), scored by a **paired**
+protocol - every arm and seed evaluated on the *same* held-out layouts, on SPL (Success weighted by
+inverse-optimal Path Length), aggregated with `rliable` (IQM + 95% stratified-bootstrap CIs +
+probability-of-improvement), against a decision rule pre-registered before any run.
+
+![M5 ablation](training/eval/m5_search.png)
+
+**Result.** Curiosity (RND) is a **clean null** (PoI 0.51, straddling 0.5) - it does nothing for SPL and
+actively impedes the initial learning bootstrap. Memory (LSTM) helps, **modestly** (IQM SPL 0.49 vs 0.40;
+PoI 0.57, below the pre-registered 0.75 "strong effect" bar), with the benefit concentrated on the easier,
+flatter levels and vanishing at the hardest, most-occluded one. Full write-up, methodology, and honest
+caveats: [`docs/M5-ablation-results.md`](docs/M5-ablation-results.md).
+
+## M6 - Visual Object-Goal Search (Fixed-Target Colour Discrimination)
+
+M6 makes **perception itself** the ablated lever on top of M5's terrain spine. Three geometrically
+identical goals spawn per episode; the target is a **fixed colour** (red), the two decoys are random
+distinct non-target colours. Three arms differ only in what they can see (LSTM on, no RND, identical
+reward/curriculum in all three): `pixel` (an 84x84 egocentric RGB camera into a from-scratch CNN), `ray1`
+(ray fans, one undifferentiated goal tag - a provable chance floor), and `rayC` (ray fans, hand-told
+per-colour tags - the upper bound). Evaluation is the same paired, always-hard, `rliable`-aggregated
+protocol as M5, gated by a five-point decision rule pre-registered before the full 9-run ablation.
+
+![M6 ablation](training/eval/m6_search.png)
+
+**Result.** The from-scratch CNN **matches the hand-told upper bound and clearly beats the colour-blind ray
+sensor.** `pixel` success 0.713 (95% CI 0.660-0.762) is fully separated from `ray1`'s 0.357 (CI 0.305-0.412,
+containing chance = 1/3 exactly, confirming no confound) with PoI(SPL) = 1.000. `pixel` vs `rayC` (0.773,
+CI 0.723-0.817) overlap on success - a statistical match - with `pixel` nominally ahead on path efficiency
+(mean SPL 0.398 vs 0.348). Getting here required diagnosing and discarding a failed first design (a
+per-episode colour *cue* that a from-scratch CNN could not learn to bind to pixels across four training
+attempts) - the honest negative result that led to this fixed-target redesign. Full write-up, the cued-negative
+evidence, and honest caveats: [`docs/M6-results.md`](docs/M6-results.md).
 
 ## Layout
 

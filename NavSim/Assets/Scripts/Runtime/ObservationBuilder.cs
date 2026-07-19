@@ -2,10 +2,11 @@ using UnityEngine;
 
 namespace NavSim.Runtime
 {
-    // M5 visual-only obs: own velocity (including VERTICAL, so climbing/falling registers) + grounded +
-    // jump-ready. NO goal bearing/range (the agent must SEE its goal via rays), NO color one-hot (single
-    // learner). 3D on the XZ plane; headingDeg is rotation about world Y (0 deg faces +Z == forward).
-    // Returns [localVelX, localVelY, localVelZ, grounded01, jumpReady01], length 5.
+    // M6 v2 obs: M5 proprioception ONLY (own velocity incl. VERTICAL + grounded + jump-ready). NO goal
+    // bearing/range (the agent must SEE its goal) and NO colour cue: the target colour is FIXED
+    // (red, GoalPalette.TargetColorIndex), so there is nothing per-episode to announce - identifying
+    // the target is entirely the world-perception sensor's job (the ablation's lever). Returns
+    // [localVelX, localVelY, localVelZ, grounded01, jumpReady01], length 5.
     public static class ObservationBuilder
     {
         public static float[] Build(Vector3 agentVelocity, float headingDeg, float maxSpeed,
