@@ -38,6 +38,15 @@ namespace NavSim.Tests.EditMode
         }
 
         [Test]
+        public void ArmEnumValues_AreTheArmModeEncoding()
+        {
+            // Load-bearing: these ints ARE the arm_mode env-param encoding CoopArena decodes.
+            Assert.AreEqual(0, (int)ArmRouting.Arm.Selfish);
+            Assert.AreEqual(1, (int)ArmRouting.Arm.Shared);
+            Assert.AreEqual(2, (int)ArmRouting.Arm.Poca);
+        }
+
+        [Test]
         public void NoOtherRewardExists()
         {
             // The spec's "nothing else, ever": the type surface is Outcome + PerStep only.

@@ -54,5 +54,23 @@ namespace NavSim.Tests.EditMode
             Assert.AreEqual(1f, obs[2], 1e-3f); // localVelZ
             Assert.AreEqual(0f, obs[0], 1e-3f); // localVelX
         }
+
+        [Test]
+        public void BuildCoop_Length6_DoorFlagAtIndex5()
+        {
+            var open = ObservationBuilder.BuildCoop(Vector3.zero, 0f, 4f, true, true, true);
+            Assert.AreEqual(6, open.Length);
+            Assert.AreEqual(1f, open[5], 1e-6f);
+            Assert.AreEqual(0f, ObservationBuilder.BuildCoop(Vector3.zero, 0f, 4f, true, true, false)[5], 1e-6f);
+        }
+
+        [Test]
+        public void BuildCoop_Indices0to4_MatchBuild()
+        {
+            var v = new Vector3(1f, -2f, 3f);
+            var a = ObservationBuilder.Build(v, 45f, 4f, false, true);
+            var b = ObservationBuilder.BuildCoop(v, 45f, 4f, false, true, true);
+            for (int i = 0; i < 5; i++) Assert.AreEqual(a[i], b[i], 1e-6f, $"index {i}");
+        }
     }
 }
