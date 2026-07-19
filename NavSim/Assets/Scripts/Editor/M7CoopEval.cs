@@ -19,8 +19,10 @@ using NavSim.Runtime;
 // are byte-identical across arms — the paired-measurement guarantee.
 //
 // TWO BINDING HANDOFFS FROM THE TASK-3 REVIEW:
-//   (H1) HARD-ASSERT lesson >= 1. CoopArena's C0 goal ramp reads Academy.TotalStepCount (seed-INDEPENDENT), so
-//        C0 can never be a paired-measurement surface. Lesson 0 is logged as an error and skipped. Defaults 1-3.
+//   (H1) HARD-ASSERT lesson >= 1. CoopArena's C0 goal ramp is competence-gated: it advances on _c0Successes (a
+//        monotone, process-lifetime success counter), not on Academy.TotalStepCount. That still depends on
+//        training history rather than the eval's own seed/episode, so C0 can never be a paired-measurement
+//        surface. Lesson 0 is logged as an error and skipped. Defaults 1-3.
 //   (H2) Read every per-episode output AT the Success tick. Under EvalMode LastHolderIndex/StepsThisEpisode keep
 //        updating on further Ticks after the latch, so the episode loop breaks IMMEDIATELY when arena.Success
 //        flips true and records from the arena's latches at that break.
