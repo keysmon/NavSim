@@ -30,9 +30,11 @@ namespace NavSim.Runtime
         [SerializeField] private float goalRadius = 1.5f;
         [SerializeField] private int maxEpisodeSteps = 3000;
         [Tooltip("C0 goal-distance bootstrap horizon: within C0 the goal ramps from the near chamber beside " +
-                 "the doorway (door already open) to the deep far chamber over this many Academy steps " +
-                 "(arm-symmetric un-freeze; probe-recalibrated).")]
-        [SerializeField] private float c0BootstrapSteps = 300000f;
+                 "the doorway (door already open) to the deep far chamber over this many C0 SUCCESSES (not " +
+                 "wall-clock/Academy steps) - the ramp advances per success, so it can never outrun the " +
+                 "policy: the time-gated version ran 2.5x fast vs trainer steps AND outran the young " +
+                 "policy, producing the diagnosed collapse.")]
+        [SerializeField] private int c0BootstrapSuccesses = 200;
 
         // ---- Eval surface (Task 6 consumes these names verbatim) ----
         public bool EvalMode { get; set; }
@@ -56,6 +58,8 @@ namespace NavSim.Runtime
         private System.Random _layoutRng = new System.Random(); // ALL layout randomness (never UnityEngine.Random
                                                                 // here - the M6 Task-9 global-Random pairing lesson)
         private int _lesson;                                   // 0-3 (C0-C3)
+        private int _c0Successes;                              // monotone C0-success counter driving the ramp;
+                                                                 // never reset (process-lifetime; C1+ ignores it)
         private float _vacatedClock = PlateDoor.InitialSecondsSinceVacated;
         private readonly int[] _plateSteps = new int[2];       // per-agent plate-occupied step counts
 
@@ -131,6 +135,7 @@ namespace NavSim.Runtime
                 UpdateHolderLatch();
                 if (!EvalMode)
                 {
+                    if (_lesson == 0) _c0Successes++;  // competence-gated ramp driver (training C0 only)
                     ApplySplit(ArmRouting.Outcome(_armMode), scorer);
                     EndEpisodePerArm();
                     ResetEpisode();
@@ -150,8 +155,8 @@ namespace NavSim.Runtime
         // swapped) + per-agent +-0.5u jitter - the spec's symmetry-breaking pre-registered lever, ACTIVE
         // from the start; base separation ~5u keeps the >=2u minimum by construction. Goal: within C0 it
         // starts in the NEAR chamber beside the doorway (~2-4u from spawns, door already open) and
-        // migrates near->through-doorway->far as Academy.TotalStepCount ramps (the distance bootstrap;
-        // fixes the diagnosed flatline - the old ramp only varied depth WITHIN the far chamber, so even
+        // migrates out from the near chamber toward the far-chamber draw as competence grows (the
+        // distance bootstrap; fixes the diagnosed flatline - the old ramp only varied depth WITHIN the far chamber, so even
         // the easiest C0 goal sat ~8u away through the 3u doorway and no gradient ever formed); C1+ is
         // always the far-chamber placement. Plate: per the lesson geometry table (C0 shows C1's plate so
         // the world is perceptually consistent from the first step even while the door ignores it).
@@ -182,7 +187,7 @@ namespace NavSim.Runtime
             // (x) / near chamber (z=-4.5, ~2-4u from spawns) and t=1 reproduces today's far placement
             // exactly (Lerp endpoint). C1+ always uses the far-chamber candidate untouched.
             float ramp = _lesson == 0
-                ? Mathf.Clamp01(Academy.Instance.TotalStepCount / Mathf.Max(c0BootstrapSteps, 1f))
+                ? Mathf.Clamp01((float)_c0Successes / Mathf.Max(c0BootstrapSuccesses, 1))
                 : 1f;
             float zMax = Lerp(3.5f, arenaHalf - 1.5f, ramp);
             float xMax = Lerp(2f, arenaHalf - 1.5f, ramp);
