@@ -142,6 +142,12 @@ def main():
     if "m6_rayc" in order and "m6_ray1" in order:
         poi_pairs["rayc_vs_ray1"] = (
             cell_matrix(df, "m6_rayc", "spl"), cell_matrix(df, "m6_ray1", "spl"))
+    # PRIMARY, per-episode construction (the convention M5 used -- seeds=runs, held-out episodes=tasks,
+    # no cell-averaging), added alongside the 12-cell rows above (which stay unchanged). Reproduces the
+    # ~0.713 figure disclosed in docs/M6-results.md's PoI-construction-sensitivity note.
+    if "m6_pixel" in order and "m6_ray1" in order:
+        poi_pairs["pixel_vs_ray1_PER_EPISODE"] = (
+            seed_matrix(df, "m6_pixel"), seed_matrix(df, "m6_ray1"))
     poi, poi_ci = {}, {}
     if poi_pairs:
         poi, poi_ci = rly.get_interval_estimates(poi_pairs, metrics.probability_of_improvement, reps=POI_REPS)

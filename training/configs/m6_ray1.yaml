@@ -1,9 +1,11 @@
-# M6 ray1 arm: PPO + MLP (over the three M5 ray fans + the 8-float vector obs) + LSTM. NO RND (M5 settled it).
+# M6 ray1 arm: PPO + MLP (over the three M5 ray fans + the 5-float vector obs) + LSTM. NO RND (M5 settled it).
 # The fans detect a SINGLE undifferentiated tag "goal" (tagGoalsByColor=false in Training_ray1.unity), so ray1
-# has ZERO color information -> provably ~1/3 on the cued-color task. It is the CONFOUND-DETECTOR: if ray1 ever
-# beats chance, a leak (non-identical decoys, color<->position, cue) is flagged -> halt. Perception is the ONLY
-# lever vs pixel/rayC; LSTM is held ON and identical across arms; the 8-float cue is given to every arm.
-# Byte-identical to m6_rayc.yaml (the sensor difference lives in the scene, not the config) — kept separate for
+# has ZERO color information -> provably ~1/3 on the fixed-target colour-discrimination task (single goal tag,
+# no way to tell the target from the decoys). It is the CONFOUND-DETECTOR: if ray1 ever beats chance, a leak
+# (non-identical decoys, color<->position tell) is flagged -> halt. Perception is the ONLY lever vs pixel/rayC;
+# LSTM is held ON and identical across arms; the 5-float vector obs (proprioception only, no cue) is given to
+# every arm.
+# Byte-identical to m6_rayc.yaml (the sensor difference lives in the scene, not the config) - kept separate for
 # run-id clarity.
 behaviors:
   NavAgent:
@@ -34,8 +36,8 @@ behaviors:
     summary_freq: 20000
 
 # Deterministic PROGRESS curriculum (reward-threshold lessons were unusable in M4). STRUCTURE ramps L0 open/flat
-# -> L3 hidden + elevated + crowded + pits; the RGB cue + 3-goal triad ride on top at every level. BREAKPOINTS
-# are PLACEHOLDERS (0.10/0.30/0.50) -> the Phase-5 probe re-calibrates them. Identical across all 3 arms (fair ablation).
+# -> L3 hidden + elevated + crowded + pits; the fixed-red-target 3-goal triad rides on top at every level.
+# BREAKPOINTS are PROBE-CALIBRATED (B5) at 0.20/0.40/0.65. Identical across all 3 arms (fair ablation).
 environment_parameters:
   difficulty:
     curriculum:

@@ -21,7 +21,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from rliable import library as rly, metrics, plot_utils
+from rliable import library as rly, metrics
 
 CSV = "training/eval/m5_search.csv"
 ARMS = ["m5_primary", "m5_nolstm", "m5_nornd", "m5_baseline"]
@@ -87,11 +87,23 @@ def main():
     # --- figure ---
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(11, 4))
     order = [a for a in ARMS if a in scores]
-    plot_utils.plot_interval_estimates(
-        {LABELS[a]: agg[a] for a in order}, {LABELS[a]: cis[a] for a in order},
-        metric_names=["IQM SPL"], algorithms=[LABELS[a] for a in order], ax=ax0)
+
+    # Panel 0: IQM SPL per arm, 95% stratified-bootstrap CI. Hand-rolled barh+vlines (ported from the M6
+    # ablation's plotter) instead of rliable's plot_utils.plot_interval_estimates: that helper always opens
+    # its OWN new figure internally (plt.subplots() inside the function) and never uses an ax= kwarg, so the
+    # bars it draws never land on this script's ax0 -- the panel was saved blank. Metric is unchanged (still
+    # IQM, not mean); only the rendering is fixed.
+    for i, a in enumerate(order):
+        lo, hi = _ci(cis[a])
+        ax0.barh(i, hi - lo, left=lo, height=0.5, color=COLORS[a], alpha=0.75)
+        ax0.vlines(_scalar(agg[a]), i - 0.22, i + 0.22, color="k", alpha=0.6)
+    ax0.set_yticks(range(len(order)))
+    ax0.set_yticklabels([LABELS[a] for a in order])
+    ax0.set_xlim(0, 1)
+    ax0.set_xlabel("IQM SPL")
     ax0.set_title("M5 ablation — IQM SPL (95% stratified-bootstrap CI)\n"
                   "paired held-out layouts, 3 seeds/arm", fontsize=10)
+    ax0.grid(True, axis="x", alpha=0.25)
 
     levels = sorted(df.level.unique())
     for a in order:

@@ -109,6 +109,9 @@ This also rules out the failure mode where an apparent "pixel win" is really som
 
 3. **Steelman - the strong outcome, honestly framed.** Success rate is **statistically indistinguishable** between `pixel` and `rayC`: the CIs overlap (0.723-0.762), and rayC is nominally ahead of pixel at every single difficulty level (L0 .747 vs .653, L1 .760 vs .693, L2 .747 vs .733, L3 .840 vs .773) as well as overall (0.773 vs 0.713).
 Where pixel is nominally ahead is **path efficiency**: mean SPL 0.398 vs 0.348.
+That pooled edge is not spread evenly across difficulty - per-level mean SPL (pixel vs rayC) is 0.356 vs 0.375 at L0, 0.321 vs 0.341 at L1, 0.425 vs 0.312 at L2, and 0.490 vs 0.364 at L3.
+The entire pooled SPL edge is produced at L2/L3; at the confound-free L0/L1 levels, rayC nominally leads pixel on SPL as well.
+It sits exactly in the elevated-terrain zone the sensor-coverage caveat below flags, which reinforces the "match, not a win" reading of the steelman rather than a clean pixel advantage.
 PoI(SPL, pixel > rayC) = 0.632 - above chance (0.5) but below the pre-registered 0.75 "strong effect" bar, so this SPL edge is a real-but-not-decisive signal at n=3 seeds, not a clean win.
 Read honestly: **the from-scratch CNN matched the hand-told upper bound on the primary metric (success) and edged it, non-decisively, on efficiency** - "pixels learned what rays must be told," matched rather than merely approached, without overclaiming a win rayC's own numbers don't support.
 
@@ -132,6 +135,7 @@ At elevated L2/L3 targets, ray arms get zero shaping toward the goal until they 
 This is a real perception difference, orthogonal to colour, and it inflates pixel's *apparent* edge at the harder, elevated levels if read carelessly.
 The colour-discrimination claim (pixel vs ray1, pixel vs rayC) should be read off **L0/L1** - flat levels where both sensor types see the goals equally and only colour perception differs, which is exactly where the B1/B2/B3 pre-registered gates were measured.
 Reassuringly, the coverage gap does **not** appear to have manufactured pixel's headline edge: `rayC` - a *ray* arm - wins L3 outright (0.840, the best success rate of any arm at any level), which would not happen if elevation coverage alone were carrying the result.
+The steelman's SPL edge is a case in point of the caveat, not an exception to it: pixel's pooled mean-SPL lead over rayC (0.398 vs 0.348) is produced entirely at L2/L3, and rayC nominally leads pixel on SPL at both L0 and L1.
 
 - **Seed variance is real and not small at n=3.** Pixel's per-seed success is 0.59 / 0.81 / 0.74 - a 0.22 spread.
 This is reported plainly rather than smoothed into the point estimate; the Wilson CI on the pooled 300 episodes (0.660, 0.762) already reflects this dispersion, but a reader should not treat 0.713 as a tight number.

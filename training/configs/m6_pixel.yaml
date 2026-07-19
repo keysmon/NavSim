@@ -1,7 +1,8 @@
 # M6 PIXEL arm: PPO + from-scratch nature_cnn (over the 84x84 RGB CameraSensor) + LSTM. NO RND (M5 settled it).
 # Perception is the ONLY lever vs the ray arms (m6_ray1 / m6_rayc); LSTM is held ON and identical across arms.
-# The camera obs come from the CameraSensorComponent in Training_pixel.unity; the 8-float vector obs
-# (proprioception + persistent RGB cue) come from NavAgent.CollectObservations. Behavior name matches the scene.
+# The camera obs come from the CameraSensorComponent in Training_pixel.unity; the 5-float vector obs
+# (proprioception only, no cue) come from NavAgent.CollectObservations. The target is a FIXED colour (red)
+# every episode - fixed-target colour discrimination, not per-episode cued matching. Behavior name matches the scene.
 behaviors:
   NavAgent:
     trainer_type: ppo
@@ -32,9 +33,9 @@ behaviors:
     summary_freq: 20000
 
 # Deterministic PROGRESS curriculum (reward-threshold lessons were unusable in M4). STRUCTURE ramps L0 open/flat
-# -> L3 hidden + elevated + crowded + pits; the RGB cue + 3-goal triad ride on top at every level. BREAKPOINTS
-# are PLACEHOLDERS (0.10/0.30/0.50) -> the Phase-5 probe re-calibrates them (the pixel arm climbs at its own
-# rate; conditional cued matching is harder than M5's reactive nav). Identical across all 3 arms (fair ablation).
+# -> L3 hidden + elevated + crowded + pits; the fixed-red-target 3-goal triad rides on top at every level.
+# BREAKPOINTS are PROBE-CALIBRATED (B5) at 0.20/0.40/0.65 (the pixel arm climbs at its own rate; fixed-target
+# colour discrimination is harder than M5's reactive nav). Identical across all 3 arms (fair ablation).
 environment_parameters:
   difficulty:
     curriculum:

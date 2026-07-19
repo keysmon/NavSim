@@ -18,14 +18,14 @@ using NavSim.Runtime;
 // and neither the terrain nor the color draw depends on the sensor type -> every arm sees an identical
 // (layout, colors, target, positions) tuple.
 //
-// M6 metric = the CUED target. The harness captures target0 + the two decoy0 positions as Vector3 VALUES right
+// M6 metric = the fixed-colour target. The harness captures target0 + the two decoy0 positions as Vector3 VALUES right
 // after placement, and detects outcomes GEOMETRICALLY and ALWAYS HARD (independent of the training soften->harden):
 //   success    = first reach within GoalRadius of target0;
 //   decoy_visit = 1 and STOP if the agent first comes within GoalRadius of either decoy0 (a wrong-color pick).
 //
 // LIFECYCLE (from M5, EXTENDED for M6): the harness OWNS the episode/level boundary so OnEpisodeBegin fires once and
 // never re-rolls mid-episode — this needs BOTH agent.MaxStep=0 (no max-step EndEpisode) AND env.EvalMode=true (M6
-// added a decoy-touch EndEpisode M5 never had; EvalMode suppresses it so a decoy doesn't re-roll the arena/cue).
+// added a decoy-touch EndEpisode M5 never had; EvalMode suppresses it so a decoy doesn't re-roll the arena/target).
 // SetTerrainLevel(lvl) is the sole layout driver. SetModel-ORDERING FIX (Phase-0.2): step the agent once
 // (EnvironmentStep) BEFORE the first SetModel so the pixel CameraSensor's texture2D is allocated.
 public static class M6SearchEval
@@ -117,7 +117,7 @@ public static class M6SearchEval
         if (env == null || terrain == null || agent == null) { Debug.LogError("[M6Eval] Missing env/terrain/agent."); return; }
         SetupHarness(env, agent);
 
-        // (1) Paired reproducibility: same seed -> identical target + decoys + cue, twice.
+        // (1) Paired reproducibility: same seed -> identical target + decoys + colour, twice.
         (Vector3 t1, Vector3[] d1, Color c1) = PlaceSeeded(env, agent, 123);
         (Vector3 t2, Vector3[] d2, Color c2) = PlaceSeeded(env, agent, 123);
         bool paired = Approximately(t1, t2) && d1.Length == d2.Length && Approximately(d1[0], d2[0])
@@ -138,7 +138,7 @@ public static class M6SearchEval
         // (4) EvalMode suppresses the decoy EndEpisode (the CRITICAL fix). At L1 — where DecoyRules.DecoyEndsEpisode
         // is true — put a decoy right in front of the agent, drive ONE real step, and confirm the decoy path FIRED
         // (TouchedDecoy) yet the target did NOT re-roll (GoalPositionFor unchanged). Without EvalMode this step
-        // would EndEpisode → OnEpisodeBegin → re-roll the arena/cue mid-episode → corrupt the metric.
+        // would EndEpisode → OnEpisodeBegin → re-roll the arena/target mid-episode → corrupt the metric.
         UnityEngine.Random.InitState(77); env.SeedColorRng(77);
         env.SetTerrainLevel(1);
         Physics.SyncTransforms();
@@ -172,13 +172,13 @@ public static class M6SearchEval
     {
         Physics.simulationMode = SimulationMode.Script;
         agent.MaxStep = 0;      // harness owns the boundary; no OnEpisodeBegin max-step re-roll
-        env.EvalMode = true;    // AND a decoy touch must NOT EndEpisode (that re-rolls the arena/cue mid-episode);
+        env.EvalMode = true;    // AND a decoy touch must NOT EndEpisode (that re-rolls the arena/target mid-episode);
                                 // the harness detects reach-vs-decoy geometrically, always hard, across all arms
         Step();                 // SetModel-ordering fix: one step BEFORE any SetModel so the CameraSensor texture allocates
     }
 
-    // Seed BOTH RNGs identically, place a fresh triad + colors, return the captured target/decoys/cue as VALUES.
-    private static (Vector3 target, Vector3[] decoys, Color cue) PlaceSeeded(NavEnvironment env, NavAgent agent, int seed)
+    // Seed BOTH RNGs identically, place a fresh triad + colors, return the captured target/decoys/colour as VALUES.
+    private static (Vector3 target, Vector3[] decoys, Color targetColor) PlaceSeeded(NavEnvironment env, NavAgent agent, int seed)
     {
         UnityEngine.Random.InitState(seed);
         env.SeedColorRng(seed);
@@ -200,7 +200,7 @@ public static class M6SearchEval
         Vector3 start = agent.transform.position;
         Vector3 target0 = env.GoalPositionFor(agent);   // Vector3 value copies — never the live goal Transforms
         Vector3[] decoy0 = env.DecoyPositions();
-        Color cue = env.TargetColorRgb;
+        Color targetColor = env.TargetColorRgb;
         float sp = terrain.ShortestPathLength(start, target0);
         // PAIRING fingerprint (arm-INDEPENDENT): the layout+colors+NavMesh-oracle for this (seed,lvl,ep). Diffing
         // the three arms' m6_pairing_<arm>.csv streams must be byte-identical -> proves the paired-eval guarantee
@@ -208,7 +208,7 @@ public static class M6SearchEval
         fp?.AppendLine(string.Format(CultureInfo.InvariantCulture,
             "{0},{1},{2},{3:F3},{4:F3},{5:F3},{6:F3},{7:F3},{8:F3},{9:F3},{10:F3},{11:F3},{12:F3},{13:F3},{14:F3},{15:F4}",
             seed, lvl, ep, target0.x, target0.y, target0.z, decoy0[0].x, decoy0[0].y, decoy0[0].z,
-            decoy0[1].x, decoy0[1].y, decoy0[1].z, cue.r, cue.g, cue.b, sp));
+            decoy0[1].x, decoy0[1].y, decoy0[1].z, targetColor.r, targetColor.g, targetColor.b, sp));
         EpMetrics m = RunEpisode(env, agent, target0, decoy0);
         float spl = (m.success && m.pathLen > 0f && sp > 0f)
             ? Mathf.Min(1f, sp / Mathf.Max(m.pathLen, sp)) : 0f;
