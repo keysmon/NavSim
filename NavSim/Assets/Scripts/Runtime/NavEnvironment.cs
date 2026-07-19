@@ -102,14 +102,23 @@ namespace NavSim.Runtime
             if (level != _appliedLevel && agent != null) { _appliedLevel = level; agent.EndEpisode(); }
         }
 
+        // TRAINING (communicator on): the trainer's `difficulty` env-param drives the curriculum; the default is
+        // the HARDEST rung so a resumed run never regresses. DEMO (no communicator): env-params are inert
+        // (GetWithDefault always returns the default), so default to L0 — the easiest, most legible rung — and let
+        // the demo UI drive the level. The IsCommunicatorOn branch makes this change byte-identical for training.
         private int ReadDifficulty() => Mathf.Clamp(
             Mathf.RoundToInt(Academy.Instance.EnvironmentParameters.GetWithDefault(
-                "difficulty", (float)(DifficultyMapper.NumLevels - 1))),
+                "difficulty", Academy.Instance.IsCommunicatorOn ? (float)(DifficultyMapper.NumLevels - 1) : 0f)),
             0, DifficultyMapper.NumLevels - 1);
 
         // Regenerate the layout for the current curriculum level. Called from NavAgent.OnEpisodeBegin, so a
         // fresh solvable arena is drawn every episode -> thousands of layouts, no memorisation.
-        public void PlaceForNewEpisode(NavAgent a) => SetTerrainLevel(ReadDifficulty());
+        // TRAINING (communicator on): the trainer's `difficulty` env-param picks the level (unchanged).
+        // DEMO (communicator off): env-params are inert, so HOLD the level the demo UI last set (CurrentLevel) —
+        // otherwise every episode reset (MaxStep, hard-decoy touch at L1+) would snap back to ReadDifficulty's
+        // default and the L0-L3 selector would not stick.
+        public void PlaceForNewEpisode(NavAgent a) => SetTerrainLevel(
+            Academy.Instance.IsCommunicatorOn ? ReadDifficulty() : CurrentLevel);
 
         // Build the runtime triad from the scene `goal` template (once). _goals[0] IS the template; siblings are
         // geometrically identical copies (same mesh/collider/tag) — color is the only per-episode difference.
