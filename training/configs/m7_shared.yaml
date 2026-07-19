@@ -2,8 +2,9 @@
 # docs/superpowers/specs/2026-07-19-m7-cooperative-sacrifice-design.md sec 4). This arm: trainer_type ppo,
 # arm_mode=1.0 -> ArmRouting.Arm.Shared -> the identical +1 outcome (and the per-step time cost) is hand-copied
 # into BOTH agents' AddReward. This is naive cooperation: the signal is present but credit is diffuse (no
-# counterfactual baseline distinguishes the plate-holder's contribution from the scorer's). World, obs (6
-# floats: M6 proprioception 5 + doorOpen flag), nets (MLP + LSTM, M6 sizes), curriculum, and budget are
+# counterfactual baseline distinguishes the plate-holder's contribution from the scorer's). World, obs
+# (obs = 6-float vector [proprioception 5 + doorOpen] + the M5-style 3-fan rays [tags wall/door/plate/goal/agent]),
+# nets (MLP + LSTM, M6 sizes), curriculum, and budget are
 # byte-identical to m7_selfish.yaml/m7_poca.yaml except trainer_type + arm_mode (see the header comments
 # there) - reward routing is the ONLY structural difference.
 behaviors:

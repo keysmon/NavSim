@@ -3,8 +3,9 @@
 # arm_mode=2.0 -> ArmRouting.Arm.Poca -> the identical +1 outcome (and the per-step time cost) is routed as
 # AddGroupReward via SimpleMultiAgentGroup. This is counterfactual credit assignment: MA-POCA's centralized
 # critic can attribute value to the plate-holder's sacrifice even though it earns nothing individually - the
-# primary claim under test (poca beats selfish on C2+C3 with separated CIs). World, obs (6 floats: M6
-# proprioception 5 + doorOpen flag), nets (MLP + LSTM, M6 sizes), curriculum, and budget are byte-identical to
+# primary claim under test (poca beats selfish on C2+C3 with separated CIs). World, obs
+# (obs = 6-float vector [proprioception 5 + doorOpen] + the M5-style 3-fan rays [tags wall/door/plate/goal/agent]),
+# nets (MLP + LSTM, M6 sizes), curriculum, and budget are byte-identical to
 # m7_selfish.yaml/m7_shared.yaml except trainer_type + arm_mode (see the header comments there) - reward
 # routing is the ONLY structural difference.
 behaviors:

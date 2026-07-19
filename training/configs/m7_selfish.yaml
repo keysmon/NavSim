@@ -1,12 +1,13 @@
 # M7 selfish arm: plate-and-door sacrifice, reward ROUTING is the only lever across the 3 arms (see
 # docs/superpowers/specs/2026-07-19-m7-cooperative-sacrifice-design.md sec 4). This arm: trainer_type ppo,
 # arm_mode=0.0 -> ArmRouting.Arm.Selfish -> the +1 OUTCOME goes to the goal-toucher ONLY; the plate-holder gets
-# nothing for the sacrifice, ever. The per-step TIME COST is still applied to both agents individually (ArmRouting.
-# PerStep routes it scorer+partner for selfish, same as shared) so the incentive to finish fast exists identically
-# across all 3 arms - only the +1 outcome's routing differs. This is the structural floor AND the confound
-# detector: at C2+ geometry it should rarely succeed (the door does not open by accident), so an above-ceiling
-# selfish success rate flags a task leak, not a good result. World, obs (6 floats: M6 proprioception 5 + doorOpen
-# flag), nets (MLP + LSTM, M6 sizes), curriculum, and budget are byte-identical to m7_shared.yaml/m7_poca.yaml
+# nothing for the sacrifice, ever. The per-step TIME COST exists in every arm, but like the +1 outcome it is
+# ROUTED per the arm's rule (ArmRouting.PerStep): both-agents-individually here in selfish (same as shared), as
+# AddGroupReward in poca. Only for selfish is the +1 OUTCOME itself scorer-only - the per-step cost is not. This
+# is the structural floor AND the confound detector: at C2+ geometry it should rarely succeed (the door does not
+# open by accident), so an above-ceiling selfish success rate flags a task leak, not a good result. World, obs
+# (obs = 6-float vector [proprioception 5 + doorOpen] + the M5-style 3-fan rays [tags wall/door/plate/goal/agent]),
+# nets (MLP + LSTM, M6 sizes), curriculum, and budget are byte-identical to m7_shared.yaml/m7_poca.yaml
 # except trainer_type + arm_mode (see the header comments there) - reward routing is the ONLY structural
 # difference.
 behaviors:
