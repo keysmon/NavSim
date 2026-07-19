@@ -29,8 +29,9 @@ namespace NavSim.Runtime
         [SerializeField] private float plateRadius = 1.2f; // XZ occupancy radius
         [SerializeField] private float goalRadius = 1.5f;
         [SerializeField] private int maxEpisodeSteps = 3000;
-        [Tooltip("C0 goal-distance bootstrap horizon: within C0 the goal ramps from just past the door to " +
-                 "the deep far chamber over this many Academy steps (arm-symmetric un-freeze; probe-recalibrated).")]
+        [Tooltip("C0 goal-distance bootstrap horizon: within C0 the goal ramps from the near chamber beside " +
+                 "the doorway (door already open) to the deep far chamber over this many Academy steps " +
+                 "(arm-symmetric un-freeze; probe-recalibrated).")]
         [SerializeField] private float c0BootstrapSteps = 300000f;
 
         // ---- Eval surface (Task 6 consumes these names verbatim) ----
@@ -147,10 +148,13 @@ namespace NavSim.Runtime
 
         // Seeded fresh layout + latch reset. Spawns: SYMMETRIC mirrored near-chamber pair (sides randomly
         // swapped) + per-agent +-0.5u jitter - the spec's symmetry-breaking pre-registered lever, ACTIVE
-        // from the start; base separation ~5u keeps the >=2u minimum by construction. Goal: far chamber;
-        // within C0 its distance past the doorway ramps with Academy.TotalStepCount (the distance
-        // bootstrap). Plate: per the lesson geometry table (C0 shows C1's plate so the world is
-        // perceptually consistent from the first step even while the door ignores it).
+        // from the start; base separation ~5u keeps the >=2u minimum by construction. Goal: within C0 it
+        // starts in the NEAR chamber beside the doorway (~2-4u from spawns, door already open) and
+        // migrates near->through-doorway->far as Academy.TotalStepCount ramps (the distance bootstrap;
+        // fixes the diagnosed flatline - the old ramp only varied depth WITHIN the far chamber, so even
+        // the easiest C0 goal sat ~8u away through the 3u doorway and no gradient ever formed); C1+ is
+        // always the far-chamber placement. Plate: per the lesson geometry table (C0 shows C1's plate so
+        // the world is perceptually consistent from the first step even while the door ignores it).
         public void ResetEpisode()
         {
             Success = false;
@@ -172,13 +176,21 @@ namespace NavSim.Runtime
                 agents[i].TeleportTo(p, (float)(_layoutRng.NextDouble() * 360.0));
             }
 
-            // Goal: far chamber, C0 distance bootstrap (ramp fully open at C1+).
+            // Goal: far-chamber candidate first, computed EXACTLY as before (unchanged RNG draw count/
+            // order - x draw then z draw) so pairing outside C0 is untouched. C0 ONLY: Lerp that
+            // candidate back from the doorway line/near chamber by t=ramp, so t=0 sits at the doorway
+            // (x) / near chamber (z=-4.5, ~2-4u from spawns) and t=1 reproduces today's far placement
+            // exactly (Lerp endpoint). C1+ always uses the far-chamber candidate untouched.
             float ramp = _lesson == 0
                 ? Mathf.Clamp01(Academy.Instance.TotalStepCount / Mathf.Max(c0BootstrapSteps, 1f))
                 : 1f;
             float zMax = Lerp(3.5f, arenaHalf - 1.5f, ramp);
             float xMax = Lerp(2f, arenaHalf - 1.5f, ramp);
-            goal.position = new Vector3(Lerp(-xMax, xMax, NextFloat()), 0.5f, Lerp(2f, zMax, NextFloat()));
+            float farX = Lerp(-xMax, xMax, NextFloat());
+            float farZ = Lerp(2f, zMax, NextFloat());
+            float goalX = _lesson == 0 ? Lerp(0f, farX, ramp) : farX;
+            float goalZ = _lesson == 0 ? Lerp(-4.5f, farZ, ramp) : farZ;
+            goal.position = new Vector3(goalX, 0.5f, goalZ);
 
             // Plate: geometry table. C0/C1: 2u beside the doorway (random side, just inside the near
             // chamber); C2/C3: a near-chamber corner >= 10u from the doorway (random corner).
