@@ -44,6 +44,13 @@ namespace NavSim.Runtime
                  "target 4.0 s hardness. Competence-ramped down, mirroring c0BootstrapSuccesses. EvalMode " +
                  "bypasses the ramp entirely (lesson-1 dwell is always 4.0 s under eval).")]
         [SerializeField] private int c1RampSuccesses = 200;
+        [Tooltip("C2 plate-position competence ramp horizon: successes at lesson 2 (training only) before " +
+                 "the plate reaches its full far-corner position, migrating from the C1 doorway-side spot. " +
+                 "P4 showed a hard jump gives 0/100 with plate_hold=0 - the C1-competent hold-and-cross " +
+                 "behavior does not transfer across the discontinuity, so the plate distance is bridged " +
+                 "exactly as C0's goal distance and C1's dwell are (spec [AMENDED 2026-07-20]). EvalMode " +
+                 "bypasses the ramp entirely (lesson-2 plate is always at the far corner under eval).")]
+        [SerializeField] private int c2RampSuccesses = 200;
 
         // ---- Eval surface (Task 6 consumes these names verbatim) ----
         public bool EvalMode { get; set; }
@@ -72,6 +79,9 @@ namespace NavSim.Runtime
         private int _c1Successes;                              // monotone C1-success counter driving the dwell
                                                                  // ramp; never reset; training only (EvalMode
                                                                  // ignores it - see DwellForLesson)
+        private int _c2Successes;                              // monotone C2-success counter driving the
+                                                                 // plate-position ramp; never reset; training
+                                                                 // only (EvalMode ignores it - see ResetEpisode)
         private float _vacatedClock = PlateDoor.InitialSecondsSinceVacated;
         private readonly int[] _plateSteps = new int[2];       // per-agent plate-occupied step counts
 
@@ -79,9 +89,10 @@ namespace NavSim.Runtime
         public void SeedLayoutRng(int seed) => _layoutRng = new System.Random(seed);
 
         // Apply the Global-Constraints geometry table: C0 door always open (+ goal bootstrap); C1 plate
-        // 2u beside the doorway, dwell 4 s; C2 plate near-chamber corner >= 10u from the doorway, dwell
-        // 2 s; C3 = C2 geometry, dwell 1 s. Geometry is applied by the NEXT ResetEpisode (the eval calls
-        // SeedLayoutRng + SetLesson + ResetEpisode in that order).
+        // 2u beside the doorway, dwell 4 s; C2 plate near-chamber corner >= 10u from the doorway (training:
+        // competence-ramped from the C1 doorway-side spot over c2RampSuccesses successes; EvalMode always
+        // the far corner), dwell 2 s; C3 = C2 geometry, dwell 1 s. Geometry is applied by the NEXT
+        // ResetEpisode (the eval calls SeedLayoutRng + SetLesson + ResetEpisode in that order).
         public void SetLesson(int lesson) => _lesson = Mathf.Clamp(lesson, 0, 3);
 
         // C1 dwell is competence-ramped during training (30s -> 4.0s over c1RampSuccesses lesson-1
@@ -159,6 +170,7 @@ namespace NavSim.Runtime
                 {
                     if (_lesson == 0) _c0Successes++;  // competence-gated ramp driver (training C0 only)
                     if (_lesson == 1) _c1Successes++;  // competence-gated dwell-ramp driver (training C1 only)
+                    if (_lesson == 2) _c2Successes++;  // competence-gated plate-ramp driver (training C2 only)
                     ApplySplit(ArmRouting.Outcome(_armMode), scorer);
                     EndEpisodePerArm();
                     ResetEpisode();
@@ -221,11 +233,23 @@ namespace NavSim.Runtime
             goal.position = new Vector3(goalX, 0.5f, goalZ);
 
             // Plate: geometry table. C0/C1: 2u beside the doorway (random side, just inside the near
-            // chamber); C2/C3: a near-chamber corner >= 10u from the doorway (random corner).
+            // chamber); C2/C3: a near-chamber corner >= 10u from the doorway (random corner). C2 ONLY:
+            // competence-ramped Lerp from the C1 doorway-side spot to the far corner over c2RampSuccesses
+            // lesson-2 successes, so the C1-competent hold-and-cross behavior transfers instead of facing
+            // a discontinuity (P4 showed a hard jump gives 0/100, plate_hold=0; spec [AMENDED 2026-07-20]).
+            // EvalMode always uses the far corner (t=1). C3 keeps the unramped far-corner placement.
             float plateSide = NextFloat() < 0.5f ? -1f : 1f;
-            plate.position = _lesson >= 2
-                ? new Vector3(plateSide * (arenaHalf - 2f) + Jitter(), 0.02f, -(arenaHalf - 2f) + Jitter())
-                : new Vector3(plateSide * 2f, 0.02f, -1.5f);
+            if (_lesson >= 2)
+            {
+                float plateRamp = EvalMode ? 1f : Mathf.Clamp01((float)_c2Successes / Mathf.Max(c2RampSuccesses, 1));
+                Vector3 near = new Vector3(plateSide * 2f, 0.02f, -1.5f);
+                Vector3 far = new Vector3(plateSide * (arenaHalf - 2f) + Jitter(), 0.02f, -(arenaHalf - 2f) + Jitter());
+                plate.position = Vector3.Lerp(near, far, plateRamp);
+            }
+            else
+            {
+                plate.position = new Vector3(plateSide * 2f, 0.02f, -1.5f);
+            }
 
             // Door state for the fresh episode: closed unless C0 (fresh clock exceeds every dwell).
             DoorOpen = PlateDoor.IsOpen(_vacatedClock, false, DwellForLesson, _lesson == 0);
