@@ -31,7 +31,7 @@ behaviors:
         gamma: 0.99
         strength: 1.0
     keep_checkpoints: 10
-    max_steps: 3000000       # provisional (equal across arms); Task 7 / probe P5 pins it
+    max_steps: 4000000       # provisional (equal across arms); Task 7 / probe P5 pins it
     time_horizon: 64
     summary_freq: 20000
 

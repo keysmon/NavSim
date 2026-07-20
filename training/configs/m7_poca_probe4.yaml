@@ -1,0 +1,41 @@
+# THROWAWAY P1h extended (M7 Task 7a). Fork of m7_poca_probe3.yaml.
+# Question: does the env-side dwell ramp (soft 30s -> hard 4.0s, competence-gated on lesson-1 successes) finish
+# hardening given a much larger budget? Warm-started from the P1g checkpoint (already competent at C0
+# locomotion/goal-reaching and showing intermittent C1 reward lift). Constant coop_difficulty=1.0 / arm_mode=2.0
+# pinned from step 0 (no curriculum, no C0 re-ramp) — identical to probe3 except budget and warm start.
+# Launch uses --initialize-from=m7_p1g. Budget max_steps=2000000, checkpoint_interval=500000.
+behaviors:
+  CoopAgent:
+    trainer_type: poca
+    hyperparameters:
+      batch_size: 2048       # divisible by sequence_length (64) -> 32
+      buffer_size: 20480     # divisible by sequence_length (64) -> 320
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true        # normalizes the vector + ray observations (no visual obs on the coop arms)
+      hidden_units: 256
+      num_layers: 2
+      memory:
+        memory_size: 128     # LSTM hidden state (held ON, identical across all 3 arms)
+        sequence_length: 64
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    keep_checkpoints: 10
+    checkpoint_interval: 500000
+    max_steps: 2000000       # THROWAWAY P1h extended budget
+    time_horizon: 64
+    summary_freq: 20000
+
+# Constant per-arm routing selector (CoopArena.DecodeArm reads env-param "arm_mode"; ArmRouting.Arm.Poca=2).
+environment_parameters:
+  arm_mode: 2.0
+  # Constant C1 from step 0 — no curriculum. Warm-started from m7_p1g (already trained under this same
+  # constant-C1 regime); this probe asks only whether the dwell ramp finishes hardening given more budget.
+  coop_difficulty: 1.0
