@@ -53,3 +53,7 @@ training/configs/m5_ppo_probe.yaml
 #     re-created by the training scripts, so they are not tracked. ---
 NavSim/Assets/Models/M5/*.onnx
 NavSim/Assets/Models/M5/*.onnx.meta
+# M7 throwaway probe artifacts (never commit; mirror the M5 m5_ppo_probe.yaml precedent)
+training/configs/m7_*probe*.yaml
+training/eval/m7_p[0-9]*.csv
+training/eval/m7_pcomp*.csv
