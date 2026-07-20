@@ -47,4 +47,20 @@ public class LocomotionMathTests
         Assert.IsFalse(LocomotionMath.FellInPit(0.5f, -5f));
         Assert.IsFalse(LocomotionMath.FellInPit(-5f, -5f)); // exact plane = NOT fallen (locks strict <)
     }
+
+    [Test]
+    public void MaxJumpDistance_MatchesDiscreteIntegration_ForProjectConstants()
+    {
+        // jumpImpulse 7, gravity -20, dt 0.02, maxSpeed 4 -> closed form ~2.8u; discrete within (2.6, 3.0)
+        float d = LocomotionMath.MaxJumpDistance(7f, -20f, 0.02f, 4f, -30f);
+        Assert.Greater(d, 2.6f);
+        Assert.Less(d, 3.0f);
+    }
+
+    [Test]
+    public void MaxJumpDistance_Monotonic_InImpulse()
+    {
+        Assert.Greater(LocomotionMath.MaxJumpDistance(9f, -20f, 0.02f, 4f, -30f),
+                       LocomotionMath.MaxJumpDistance(7f, -20f, 0.02f, 4f, -30f));
+    }
 }
