@@ -1,0 +1,69 @@
+# SCOPE NARROWED TO C1 (2026-07-20, user-approved after probes P4/P5): the airtight far-plate
+# sacrifice (C2/C3) is unreachable at a local budget even with a plate-distance bridge (0/100;
+# see docs/M7-results.md). The demonstrated result is at C1 (door-closed, plate beside the doorway):
+# cooperative hold-and-cross (within-episode holder!=scorer) with the poca>shared>selfish ordering.
+# Two-stage C0->C1 curriculum; 2M budget (poca C1 cooperation is well-established by 2M per probe P1h).
+# M7 selfish arm: plate-and-door sacrifice, reward ROUTING is the only lever across the 3 arms (see
+# docs/superpowers/specs/2026-07-19-m7-cooperative-sacrifice-design.md sec 4). This arm: trainer_type ppo,
+# arm_mode=0.0 -> ArmRouting.Arm.Selfish -> the +1 OUTCOME goes to the goal-toucher ONLY; the plate-holder gets
+# nothing for the sacrifice, ever. The per-step TIME COST exists in every arm, but like the +1 outcome it is
+# ROUTED per the arm's rule (ArmRouting.PerStep): both-agents-individually here in selfish (same as shared), as
+# AddGroupReward in poca. Only for selfish is the +1 OUTCOME itself scorer-only - the per-step cost is not. This
+# is the structural floor AND the confound detector: at C2+ geometry it should rarely succeed (the door does not
+# open by accident), so an above-ceiling selfish success rate flags a task leak, not a good result. World, obs
+# (obs = 6-float vector [proprioception 5 + doorOpen] + the M5-style 3-fan rays [tags wall/door/plate/goal/agent]),
+# nets (MLP + LSTM, M6 sizes), curriculum, and budget are byte-identical to m7_shared.yaml/m7_poca.yaml
+# except trainer_type + arm_mode (see the header comments there) - reward routing is the ONLY structural
+# difference.
+behaviors:
+  CoopAgent:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 2048       # divisible by sequence_length (64) -> 32
+      buffer_size: 20480     # divisible by sequence_length (64) -> 320
+      learning_rate: 3.0e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+    network_settings:
+      normalize: true        # normalizes the vector + ray observations (no visual obs on the coop arms)
+      hidden_units: 256
+      num_layers: 2
+      memory:
+        memory_size: 128     # LSTM hidden state (held ON, identical across all 3 arms)
+        sequence_length: 64
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    keep_checkpoints: 10
+    max_steps: 2000000       # provisional (equal across arms); Task 7 / probe P5 pins it
+    time_horizon: 64
+    summary_freq: 20000
+
+# Constant per-arm routing selector (CoopArena.DecodeArm reads env-param "arm_mode"; ArmRouting.Arm.Selfish=0).
+# Identical param name/shape across all 3 arms; only the value differs.
+environment_parameters:
+  arm_mode: 0.0
+
+  # Deterministic PROGRESS curriculum (reward-threshold lessons were unusable in M4). Ramps the COOPERATION
+  # demand only (spec sec 5): C0 door always open (locomotion + goal-reaching bootstrap) -> C1 door closed,
+  # plate beside the doorway (minimal sacrifice) -> C2 plate in the near chamber, far from the doorway (real
+  # sacrifice, holder can't see the score happen) -> C3 continuous hold (door re-closes on vacate). Identical
+  # across all 3 arms (fair ablation).
+  # THRESHOLDS ARE PROBE-RECALIBRATED PLACEHOLDERS: 0.20/0.40/0.65 are the M6/B5 values carried over
+  # unvalidated for M7; Task 7 / probe P5 recalibrates them for the sacrifice task before any full run.
+  coop_difficulty:
+    curriculum:
+      - name: C0_door_always_open
+        completion_criteria:
+          measure: progress
+          behavior: CoopAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 0.30
+        value: 0.0
+      - name: C1_door_closed_plate_beside_doorway
+        value: 1.0

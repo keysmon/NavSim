@@ -16,5 +16,15 @@ namespace NavSim.Runtime
             Vector3 localVel = toLocal * (agentVelocity / Mathf.Max(maxSpeed, 1e-3f));
             return new[] { localVel.x, localVel.y, localVel.z, grounded ? 1f : 0f, jumpReady ? 1f : 0f };
         }
+
+        // M7 coop obs: the 5-float proprioception + a shared doorOpen indicator (spec sec 3 - an
+        // indicator light, not a communication channel; removes the partial-obs confound so the
+        // measured lever stays credit assignment). Returns [Build[0..4], doorOpen01], length 6.
+        public static float[] BuildCoop(Vector3 agentVelocity, float headingDeg, float maxSpeed,
+            bool grounded, bool jumpReady, bool doorOpen)
+        {
+            float[] b = Build(agentVelocity, headingDeg, maxSpeed, grounded, jumpReady);
+            return new[] { b[0], b[1], b[2], b[3], b[4], doorOpen ? 1f : 0f };
+        }
     }
 }

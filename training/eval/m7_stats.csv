@@ -1,0 +1,36 @@
+metric,group,value,ci_lo,ci_hi,n
+success_rate,poca (MA-POCA credit),0.7066666666666667,0.5955955482988723,0.797598596799243,75
+success_rate,shared (naive reward-sharing),0.32,0.22542995032840857,0.432110632973233,75
+success_rate,selfish (per-agent PPO),0.3466666666666667,0.24882277261645308,0.45945253908494527,75
+coop_fraction,poca (MA-POCA credit),0.39622641509433965,0.2758940673551368,0.530585213298963,53
+coop_fraction,shared (naive reward-sharing),0.5416666666666666,0.3507486535493746,0.7210866627230583,24
+coop_fraction,selfish (per-agent PPO),0.5384615384615384,0.35457938742995065,0.7124414647306757,26
+plate_hold_frac_all,poca (MA-POCA credit),0.09527733333333334,,,75
+plate_hold_frac_success,poca (MA-POCA credit),0.11268113207547169,,,53
+plate_hold_frac_all,shared (naive reward-sharing),0.088,,,75
+plate_hold_frac_success,shared (naive reward-sharing),0.09811666666666667,,,24
+plate_hold_frac_all,selfish (per-agent PPO),0.118088,,,75
+plate_hold_frac_success,selfish (per-agent PPO),0.15578076923076922,,,26
+mean_steps_success,poca (MA-POCA credit),847.3396226415094,,,53
+mean_steps_solo_success,poca (MA-POCA credit),683.1875,,,32
+mean_steps_coop_success,poca (MA-POCA credit),1097.4761904761904,,,21
+mean_steps_success,shared (naive reward-sharing),1002.2916666666666,,,24
+mean_steps_solo_success,shared (naive reward-sharing),701.5454545454545,,,11
+mean_steps_coop_success,shared (naive reward-sharing),1256.7692307692307,,,13
+mean_steps_success,selfish (per-agent PPO),1354.8076923076924,,,26
+mean_steps_solo_success,selfish (per-agent PPO),1230.6666666666667,,,12
+mean_steps_coop_success,selfish (per-agent PPO),1461.2142857142858,,,14
+per_seed_success_s0,poca (MA-POCA credit),0.8,,,25
+per_seed_success_s1,poca (MA-POCA credit),0.36,,,25
+per_seed_success_s2,poca (MA-POCA credit),0.96,,,25
+per_seed_success_s0,shared (naive reward-sharing),0.08,,,25
+per_seed_success_s1,shared (naive reward-sharing),0.0,,,25
+per_seed_success_s2,shared (naive reward-sharing),0.88,,,25
+per_seed_success_s0,selfish (per-agent PPO),0.4,,,25
+per_seed_success_s1,selfish (per-agent PPO),0.2,,,25
+per_seed_success_s2,selfish (per-agent PPO),0.44,,,25
+poi_success,poca_vs_shared,0.6933333333333332,0.6266666666666666,0.76,
+poi_success,poca_vs_selfish,0.6799999999999998,0.6199999999999999,0.74,
+poi_success,shared_vs_selfish,0.48666666666666664,0.42,0.5533333333333333,
+coop_frac_z_test,poca_vs_shared,-1.1904189975113704,,,
+coop_frac_z_test,poca_vs_selfish,-1.1958718631727983,,,

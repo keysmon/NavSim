@@ -7,7 +7,7 @@ in-browser via a Unity WebGL build with in-engine inference (Unity Sentis).
 
 ## Status
 
-Milestones M0-M6 complete. The full pipeline is proven end to end
+Milestones M0-M7 complete. The full pipeline is proven end to end
 (Unity -> ML-Agents -> ONNX -> Sentis -> WebGL -> Vercel):
 
 - **M0** - single-agent pipeline smoke: an agent reaches a visible goal in-browser.
@@ -27,10 +27,14 @@ Milestones M0-M6 complete. The full pipeline is proven end to end
   egocentric RGB pixels vs. ray sensors with/without hand-told colour tags, on a fixed-target colour
   discrimination task; a paired, pre-registered ablation (see below) found the CNN matches the hand-told
   upper bound and clearly beats the colour-blind ray sensor.
+- **M7** - cooperative sacrifice: reward routing becomes the ablated lever - MA-POCA counterfactual credit
+  assignment vs naive reward-sharing vs selfish per-agent PPO, on a two-agent plate-and-door task; a paired
+  ablation (see below) found credit assignment more than doubles task success but the pre-registered
+  "credit assignment teaches sacrifice" hypothesis is refuted at the measurable rung.
 
 **Live demo:** https://navsim-webgl.vercel.app
 
-Remaining: M7 (MA-POCA benchmark), M8 (CI/CD).
+Remaining: M8 (CI/CD).
 
 ## M3 - Generalization
 
@@ -133,6 +137,34 @@ CI 0.723-0.817) overlap on success - a statistical match - with `pixel` nominall
 per-episode colour *cue* that a from-scratch CNN could not learn to bind to pixels across four training
 attempts) - the honest negative result that led to this fixed-target redesign. Full write-up, the cued-negative
 evidence, and honest caveats: [`docs/M6-results.md`](docs/M6-results.md).
+
+## M7 - Cooperative Sacrifice (MA-POCA Credit Assignment)
+
+M7 makes **reward routing** the ablated lever. Two shared-policy agents share a plate-and-door arena: a
+door opens only while an agent stands on a pressure plate, and the goal sits past the door. Three arms
+differ only in how the sparse reward is routed (identical network, observations, and curriculum): `poca`
+(MA-POCA counterfactual credit assignment), `shared` (naive reward-sharing PPO), and `selfish` (per-agent
+PPO). Evaluation is the same paired, byte-verified, `rliable`-aggregated protocol as M5/M6, at a hard C1
+rung (4.0 s door-open grace), 3 seeds x 25 episodes per arm.
+
+We **pre-registered** the hypothesis that credit assignment would produce the highest *cooperative
+fraction* (one agent holding the plate while the other crosses - learned sacrifice).
+
+![M7 cooperative sacrifice](training/eval/m7_coop.png)
+
+**Result (reported honestly).** The competence result is a **clean positive**: MA-POCA **more than doubles**
+C1 success versus both baselines (`poca` 0.707, 95% CI 0.596-0.798, vs `shared` 0.320 and `selfish` 0.347 -
+fully separated CIs, and `poca` is the top arm in every seed). But the pre-registered cooperation hypothesis
+is **refuted, unforced**: `poca` shows the *lowest* cooperative fraction (0.396 vs 0.542 / 0.538), and the
+difference is within noise (~1.2 sigma). The mechanism is that C1 is **solo-solvable** - one agent can tap
+the plate and sprint across alone - so cooperation is a crutch of the weaker policies, and the strongest
+policy (poca) solves it solo and faster; competence and the cooperation proxy anti-correlate at a
+solo-solvable rung. The only rung where sacrifice was geometrically **forced** (C2, plate off the
+goal-approach path) proved **not learnable** at a local budget (0/100, zero plate contact, with and without
+a curriculum bridge), against a scene a self-test confirms *can* score a forced sacrifice. The negative is a
+feature, not a failure - same discipline as M5's RND null and M6's cued-binding negative. Full write-up, the
+mechanism, the C2 boundary, the multi-probe methodology arc, and honest limitations:
+[`docs/M7-results.md`](docs/M7-results.md).
 
 ## Layout
 

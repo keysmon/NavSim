@@ -17,6 +17,8 @@ TagManager:
   - goal_c6
   - goal_c7
   - mover
+  - door
+  - plate
   layers:
   - Default
   - TransparentFX
@@ -28,7 +30,7 @@ TagManager:
   - 
   - StaticGeometry
   - Agent
-  - 
+  - DoorBars
   - 
   - 
   - 
