@@ -1,40 +1,89 @@
-# NavSim - Multi-Agent Navigation Simulator
+# NavSim - a reinforcement-learning navigation research simulator
 
-A 2D Unity + ML-Agents simulator where a shared-policy crowd learns to *search out* hidden goals
-and avoid collisions with each other and with obstacles.
-Trained with reinforcement learning (PPO, and later MA-POCA), exported to ONNX, and playable
-in-browser via a Unity WebGL build with in-engine inference (Unity Sentis).
-
-## Status
-
-Milestones M0-M7 complete. The full pipeline is proven end to end
-(Unity -> ML-Agents -> ONNX -> Sentis -> WebGL -> Vercel):
-
-- **M0** - single-agent pipeline smoke: an agent reaches a visible goal in-browser.
-- **M1** - static obstacles + collision avoidance.
-- **M2** - 2-8 shared-policy crowd with color-coded goals, a cooperative (congestion) reward, and
-  visual-only observations (no compass oracle); interactive crowd-size slider.
-- **M3** - a single collapsed difficulty curriculum (agent count x arena size x obstacle density) with a
-  held-out generalization evaluation (see below); interactive difficulty + "new layout" controls.
-- **M4** - hidden-goal search: ray length becomes a curriculum axis that fades from visible to hidden, the
-  distance-shaping reward is gated on visibility, and the policy gains an LSTM + ICM curiosity; a 4-arm
-  ablation (see below) with an interactive goal-visibility slider.
-- **M5** - 3D terrain search: a single learner navigates procedurally generated 3D terrain (ramps, elevated
-  platforms, hazard pits, oblivious movers) to a line-of-sight-gated goal via ray-fan perception; a paired,
-  pre-registered LSTM x RND ablation (see below) found memory gives a modest, real efficiency gain and
-  curiosity gives none.
-- **M6** - visual object-goal search: perception itself becomes the ablated lever - a from-scratch CNN over
-  egocentric RGB pixels vs. ray sensors with/without hand-told colour tags, on a fixed-target colour
-  discrimination task; a paired, pre-registered ablation (see below) found the CNN matches the hand-told
-  upper bound and clearly beats the colour-blind ray sensor.
-- **M7** - cooperative sacrifice: reward routing becomes the ablated lever - MA-POCA counterfactual credit
-  assignment vs naive reward-sharing vs selfish per-agent PPO, on a two-agent plate-and-door task; a paired
-  ablation (see below) found credit assignment more than doubles task success but the pre-registered
-  "credit assignment teaches sacrifice" hypothesis is refuted at the measurable rung.
+NavSim is a Unity ML-Agents 3D navigation simulator, built as a sequence of reinforcement-learning research milestones.
+Each milestone poses one question, answers it with a rigorous paired / multi-seed evaluation, and (mostly) ships a live in-browser WebGL demo.
+The through-line is rigor and honesty: negative results are reported unforced, claims and decision rules are pre-registered before any compute is spent, statistics are multi-seed, and every headline is verified by driving the real system rather than by trusting a training curve.
+The arc runs from a 2D foundation (M0-M4: crowds, curricula, hidden-goal search) into 3D (M5-M7: terrain search, visual object-goal search, cooperative credit assignment).
 
 **Live demo:** https://navsim-webgl.vercel.app
 
-Remaining: M8 (CI/CD).
+![Capstone stage](docs/capstone/capstone.png)
+
+*The capstone final stage: a legible critical path - tan tread ramp up to a raised ledge, a slate occluding wall, a risk/reward pit gap, and the red-target-among-decoys reveal - hand-authored to showcase the M6 visual object-goal search task on deliberately-composed terrain.*
+
+## Pipeline
+
+End-to-end and proven: a Unity scene -> ML-Agents PPO / MA-POCA training -> ONNX export -> Unity Inference Engine (Sentis) in-engine inference -> a WebGL build deployed on Vercel.
+
+## The milestone arc
+
+Each row is one question and its honest answer.
+
+- **M0 - Pipeline smoke.**
+  The full toolchain proven end to end: a single agent reaches a visible goal in-browser, through the entire Unity -> ML-Agents -> ONNX -> Sentis -> WebGL path.
+
+- **M1 - Static obstacles.**
+  Obstacle fields plus collision avoidance - the reactive-navigation baseline the later search work builds on.
+
+- **M2 - Crowds + cooperative reward.**
+  2-8 shared-policy agents with colour-coded goals, a cooperative congestion reward, and visual-only observations (no compass oracle); an interactive crowd-size slider in the demo.
+
+- **M3 - Curriculum + generalization.**
+  One collapsed difficulty axis co-varies agent count x arena size x obstacle density; the trained policy then *generalizes* to unseen off-diagonal layouts (off-diagonal goal rates stay within the trained range and body-overlap stays ~0). Live.
+
+- **M4 - Hidden-goal search.**
+  Ray length fades from visible to hidden and the distance-shaping reward is visibility-gated, so the agent must search. The policy learns hidden-goal search, but the LSTM x curiosity ablation is reported as honestly **inconclusive at n=1 seed** - the exact limitation that motivated M5's rebuilt methodology.
+
+- **M5 - Memory x curiosity ablation.**
+  LSTM x RND, 4 arms x 5 seeds x 3M steps, on a paired, pre-registered protocol (SPL, `rliable` IQM + bootstrap CIs + probability-of-improvement).
+  LSTM is a **modest real gain** (IQM SPL 0.49 vs 0.40; PoI 0.57, below the pre-registered 0.75 "strong effect" bar); RND is a **clean null**.
+  The honest headline: memory helps modestly, curiosity does nothing here.
+  [`docs/M5-ablation-results.md`](docs/M5-ablation-results.md).
+
+- **M6 - Visual object-goal search.**
+  A from-scratch `nature_cnn` over 84x84 egocentric RGB pixels vs ray sensors, on a fixed-target colour-discrimination task - "pixels learn what rays must be told."
+  The pixel CNN scores **0.71** vs `ray1`'s **0.36** (chance = 1/3, confirming no confound) and matches the hand-told upper bound `rayC` at **0.77**.
+  The first, cued-colour design **failed four probes** (cross-modal binding was unlearnable at a local budget) and was honestly **redesigned** to the fixed-target task. Live.
+  [`docs/M6-results.md`](docs/M6-results.md).
+
+- **M7 - Cooperative sacrifice benchmark.**
+  MA-POCA counterfactual credit assignment vs naive reward-sharing vs selfish PPO, on a plate-and-door task, 3 arms x 3 seeds.
+  MA-POCA **more than doubles** C1 task success (0.71 vs 0.32 / 0.35, fully separated CIs) - a clean credit-assignment **competence** win.
+  But the pre-registered *cooperation* hypothesis is **refuted, unforced**: POCA is no more cooperative than the baselines (C1 is solo-solvable, so competence and the cooperation proxy anti-correlate), and the airtight forced-sacrifice C2 rung was unreachable at a local budget (characterized as a boundary).
+  A genuine negative, reported without spin.
+  [`docs/M7-results.md`](docs/M7-results.md).
+
+- **Capstone - the final stage (shown above).**
+  A curated, deliberately-composed challenge course with a single legible critical path - ramp -> raised ledge -> occluding wall -> risk/reward pit gap -> the red-target-among-decoys reveal - demonstrating the visual-search task on hand-authored terrain.
+  Built by `NavSim/Assets/Scripts/Editor/CapstoneSceneSetup.cs` (`Assets/Scenes/Capstone.unity`).
+
+## What makes it research, not a reel
+
+- **Unforced negatives.**
+  M4 is reported inconclusive, M5's RND is a null, and M7's pre-registered cooperation hypothesis is refuted - each stated plainly, with no reshaping of the metric to rescue a headline.
+
+- **Pre-registration.**
+  The claim under test and the decision rule (e.g. PoI >= 0.75 to justify a lever, add seeds on an ambiguous result) are fixed *before* any compute is spent, so the methodology can prevent an overclaim instead of manufacturing one.
+
+- **Multi-seed, reliable statistics.**
+  Effects are aggregated with `rliable`: interquartile-mean (IQM), 95% stratified-bootstrap confidence intervals, and probability-of-improvement - not single-run point estimates.
+
+- **Verification by driving the real flow.**
+  Conclusions are checked by exercising the real system - in-Editor rollout watches of a checkpoint, byte-verified paired evaluation on identical held-out layouts - rather than by trusting an aggregate training curve (which, on this project, once hid a wandering policy behind a rising reward).
+
+## Future work
+
+- **M8 (CI/CD)** - automated `game-ci` build and deploy - is intentionally scoped out of this wrap.
+- Turning the capstone into a fully playable, *trained* level (a live policy running the hand-authored course end to end).
+
+## Tech stack
+
+Unity 6 LTS, com.unity.ml-agents 4.0.x, Python 3.10.x, Unity Inference Engine (Sentis) 2.x, WebGL, Vercel.
+See `VERSIONS.md` for exact pins.
+
+---
+
+# Milestone detail
 
 ## M3 - Generalization
 
@@ -78,7 +127,7 @@ lessons proved unusable because the per-episode reward is too noisy to gate on (
 cold-start reward of ~-2.7 (reaching almost no goals) to ~+1.6 (reaching goals faster than the step penalty
 bleeds), and in the in-engine eval it reaches goals at every visibility and keeps body-overlap at exactly 0.
 
-The exit criterion is an **ablation**: the same env + curriculum trained four ways (LSTM+curiosity /
+The exit criterion is an **ablation**: the same env + curriculum trained four ways (LSTM + curiosity /
 LSTM-only / curiosity-only / neither) and compared on the hidden rung.
 
 ![M4 ablation](training/eval/m4_search.png)
@@ -94,7 +143,8 @@ as exploratory, not as the headline. The most likely reading is that at 0.2x ray
 "hidden" regime is still **solvable by reactive local search** - the agent bumps around ray-visible
 structure and stumbles onto goals often enough that memory and curiosity are not *forced* to matter. A
 sharper test would shorten the ray further, enlarge the arena, or occlude the goal behind obstacles, and run
-multiple seeds. Regenerate with `Tools/NavSim/Run M4 Search Eval` (writes `m4_search.csv`) and
+multiple seeds. This limitation is exactly what M5 was rebuilt to fix. Regenerate with
+`Tools/NavSim/Run M4 Search Eval` (writes `m4_search.csv`) and
 `training/eval/plot_m4_search.py` (reads that plus the per-arm `m4_l3_reward.csv`).
 
 ## M5 - 3D Terrain Search (LSTM x RND Ablation)
@@ -169,11 +219,9 @@ mechanism, the C2 boundary, the multi-probe methodology arc, and honest limitati
 ## Layout
 
 - `NavSim/` - the Unity project (created in M0 Task 1).
-- `training/` - Python ML-Agents trainer configs and environment.
+- `NavSim/Assets/Scenes/Capstone.unity` - the curated capstone showcase stage; `CapstoneSceneSetup.cs` (under `Assets/Scripts/Editor/`) rebuilds it.
+- `docs/capstone/` - the hero render (`capstone.png`) and its earlier iterations.
+- `docs/` - the per-milestone results write-ups (`M5-ablation-results.md`, `M6-results.md`, `M7-results.md`).
+- `training/` - Python ML-Agents trainer configs, environment, and the evaluation harness + figures.
 - `web/` - the WebGL build output deployed to Vercel.
 - `docs/superpowers/` - design spec and milestone plans (local only, not pushed).
-
-## Tech stack
-
-Unity 6 LTS, com.unity.ml-agents 4.0.x, Python 3.10.x, Unity Inference Engine (Sentis) 2.x, WebGL, Vercel.
-See `VERSIONS.md` for exact pins.
