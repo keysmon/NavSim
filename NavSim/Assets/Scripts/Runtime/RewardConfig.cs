@@ -14,6 +14,7 @@ namespace NavSim.Runtime
 
         public float pitPenalty;        // cost of falling into a hazard pit (M5); "bold" start = 0.25
         public float decoyPenalty;      // cost of touching a wrong-color goal (M6); mirror pit = 0.25
+        public float jumpPenalty;       // flat cost per jump (showcase); jump only when it helps
 
         public static RewardConfig Default => new RewardConfig
         {
@@ -25,7 +26,8 @@ namespace NavSim.Runtime
             congestionRadius = 2.5f,
             congestionWeight = 0.002f,
             pitPenalty = 0.25f,
-            decoyPenalty = 0.25f
+            decoyPenalty = 0.25f,
+            jumpPenalty = 0.02f
         };
     }
 }

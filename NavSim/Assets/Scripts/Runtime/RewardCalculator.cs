@@ -16,7 +16,8 @@ namespace NavSim.Runtime
             bool reachedGoal,
             in RewardConfig cfg,
             bool goalVisible,
-            bool fellInPit)
+            bool fellInPit,
+            bool jumped)
         {
             float shaping = (goalVisible && !fellInPit)
                 ? cfg.shapingScale * (prevDistanceToGoal - currDistanceToGoal)
@@ -24,6 +25,7 @@ namespace NavSim.Runtime
             float reward = shaping - cfg.stepPenalty;
             if (reachedGoal) reward += cfg.goalBonus;
             if (fellInPit) reward -= cfg.pitPenalty;
+            if (jumped) reward -= cfg.jumpPenalty;
             return reward;
         }
 

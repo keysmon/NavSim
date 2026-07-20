@@ -69,7 +69,8 @@ namespace NavSim.Runtime
             transform.Rotate(0f, turn * maxTurnDegPerStep, 0f);
 
             bool grounded = _cc.isGrounded;
-            if (jumpPressed && grounded) JumpUses++; // a jump only launches from the ground (LocomotionMath)
+            bool jumpedNow = jumpPressed && grounded;
+            if (jumpedNow) JumpUses++; // a jump only launches from the ground (LocomotionMath)
             _vY = LocomotionMath.NextVerticalVelocity(
                 _vY, grounded, jumpPressed, jumpImpulse, gravity, Time.fixedDeltaTime, terminalVelocity);
 
@@ -87,7 +88,7 @@ namespace NavSim.Runtime
             bool reached = !fellInPit && !touchingDecoy && env.ReachedGoal(this);
             bool goalVisible = env.TargetPerceivable(this);   // shaping gated on the agent's ACTUAL forward FOV
 
-            float step = RewardCalculator.Step(_prevDist, dist, reached, reward, goalVisible, fellInPit);
+            float step = RewardCalculator.Step(_prevDist, dist, reached, reward, goalVisible, fellInPit, jumpedNow);
             if (decoyEnter) step -= reward.decoyPenalty;
             var neighborDist = CrowdMath.NeighborDistances(pos, env.MoverPositions(), reward.congestionRadius);
             float moverCost = RewardCalculator.CrowdPenalty(neighborDist, reward);
