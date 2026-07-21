@@ -57,3 +57,4 @@ NavSim/Assets/Models/M5/*.onnx.meta
 training/configs/m7_*probe*.yaml
 training/eval/m7_p[0-9]*.csv
 training/eval/m7_pcomp*.csv
+training/configs/showcase_*probe*.yaml
