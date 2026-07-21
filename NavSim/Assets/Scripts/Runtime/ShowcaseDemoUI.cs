@@ -185,16 +185,18 @@ namespace NavSim.Runtime
                 _sighted ? Color.red : new Color(0f, 0f, 0f, 0.6f));
             GUI.DrawTexture(pipRect, _rt, ScaleMode.StretchToFill);
 
-            // In-PiP reticle over the sighted target (stretch). Force a square (1:1) aspect for the projection so it
+            // In-PiP reticle over the sighted target (stretch). Pin a square (1:1) aspect for the projection so it
             // matches the 84x84 sensor's framing — outside its own render call the camera's aspect is the screen's,
-            // which would mislocate the marker (the same trap NavEnvironment avoids). ResetAspect after; the sensor
-            // overrides aspect during its render, so this is a no-op for it.
+            // which would mislocate the marker (the same trap NavEnvironment avoids). CRITICAL: writing Camera.aspect
+            // switches the camera OFF auto-aspect until ResetAspect — the CameraSensor renders to an 84x84 RT and
+            // relies on the AUTO 1:1 aspect it derives from that RT (it never sets aspect itself). So we must
+            // ResetAspect() to return to auto, NOT restore a captured value: a pinned screen aspect would persist and
+            // distort every later render — this PiP AND the live CNN input.
             if (_sighted && agent != null && env != null)
             {
-                float savedAspect = eyeCam.aspect;
                 eyeCam.aspect = 1f;
                 Vector3 vp = eyeCam.WorldToViewportPoint(env.GoalPositionFor(agent));
-                eyeCam.aspect = savedAspect;
+                eyeCam.ResetAspect();
                 if (vp.z > 0f)
                 {
                     EnsureRing();
