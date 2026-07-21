@@ -48,7 +48,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.12
+          threshold: 0.20
         value: 0.0
       - name: L1_ramp
         completion_criteria:
@@ -56,7 +56,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.25
+          threshold: 0.40
         value: 1.0
       - name: L2_wall
         completion_criteria:
@@ -64,7 +64,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.40
+          threshold: 0.60
         value: 2.0
       - name: L3_gap
         completion_criteria:
@@ -72,7 +72,7 @@ environment_parameters:
           behavior: NavAgent
           signal_smoothing: true
           min_lesson_length: 100
-          threshold: 0.60
+          threshold: 0.80
         value: 3.0
       - name: L4_gauntlet
         value: 4.0
