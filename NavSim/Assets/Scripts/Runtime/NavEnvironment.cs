@@ -185,9 +185,20 @@ namespace NavSim.Runtime
         // === COURSE mode (course != null) ===
         // Fixed showcase geometry: build the stage, place agent + triad off the pure layout, no NavMesh anywhere.
 
+        // Fail-fast wiring guard for the course entry points: an unwired course scene (missing course/agent/goal)
+        // must fail LOUD + clean here, not NRE deep inside EnsureTriad/ApplyCourse. Returns false + logs on any gap.
+        private bool CourseWired()
+        {
+            if (course != null && agent != null && goal != null) return true;
+            Debug.LogError("[NavEnvironment] Course mode needs `course`, `agent`, and `goal` wired in the scene — " +
+                           "course apply skipped (fix the NavEnvironment wiring).");
+            return false;
+        }
+
         // A training draw of `stage`: random mirror + (stage 3 only) random pit variant, with spawn/lighting jitter.
         private void SetCourseStage(int stage)
         {
+            if (!CourseWired()) return;
             EnsureTriad();
             bool mirrored = Random.value < 0.5f;
             CourseVariant variant = stage == 3
@@ -215,7 +226,9 @@ namespace NavSim.Runtime
 
         private void JitterLighting()
         {
-            if (_sun == null) { var l = FindAnyObjectByType<Light>(); if (l != null && l.type == LightType.Directional) _sun = l; }
+            if (_sun == null) // cache the FIRST directional light — FindAnyObjectByType could return a point/spot and no-op forever
+                foreach (Light l in FindObjectsByType<Light>(FindObjectsSortMode.None))
+                    if (l != null && l.type == LightType.Directional) { _sun = l; break; }
             if (_sun == null) return;
             _sun.transform.rotation = Quaternion.Euler(45f + Random.Range(-6f, 6f), -35f + Random.Range(-10f, 10f), 0f);
             _sun.intensity = 1f + Random.Range(-0.1f, 0.1f);
@@ -225,6 +238,7 @@ namespace NavSim.Runtime
         // Deterministic course apply for eval/demo (no spawn jitter, no lighting jitter).
         public void ForceCourse(int stage, bool mirrored, CourseVariant variant)
         {
+            if (!CourseWired()) return; // same NRE risk as SetCourseStage; eval/demo entry point guarded too
             EnsureTriad();
             ApplyCourse(stage, mirrored, variant, jitter: false);
         }
