@@ -210,6 +210,13 @@ namespace NavSim.Runtime
         // Shared by training draws (jitter) and ForceCourse (deterministic). Places agent + triad off the layout.
         private void ApplyCourse(int stage, bool mirrored, CourseVariant variant, bool jitter)
         {
+            // Course mode is self-contained (its own StartFloor/decks/ramp/walls); the M5/M6 `terrain` arena is unused
+            // here — but its GameObjects keep LIVE colliders, and the arena's boundary walls sit ACROSS the course
+            // (Wall_North spans the full width at z=11, blocking every stage that lives beyond it). Neutralize the whole
+            // arena hierarchy once (idempotent via activeSelf; terrain == Arena root, so this disables its walls+floor).
+            // COURSE-MODE ONLY: ApplyCourse is never reached when course == null, so this is byte-inert for every
+            // procedural M5/M6/M7 scene. Course mode never calls terrain.Generate, so disabling it changes nothing else.
+            if (terrain != null && terrain.gameObject.activeSelf) terrain.gameObject.SetActive(false);
             course.Build(stage, mirrored, variant);
             CourseLayout lay = course.CurrentLayout;
             Vector3 spawn = lay.SpawnPos;

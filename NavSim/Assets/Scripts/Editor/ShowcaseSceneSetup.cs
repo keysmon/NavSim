@@ -24,6 +24,7 @@ public static class ShowcaseSceneSetup
     private const string ShowcaseScene = "Assets/Scenes/Training_showcase.unity";
     private const float  JumpPenalty   = 0.02f;   // flat per-jump cost (RewardConfig.Default), the trap value
     private const int    MinMaxStep    = 3000;    // per-episode cap: one course traversal must fit
+    private const float  StepOffset    = 0.45f;   // CC step-up: mounts the course 0.3 curb + 0.4 pad, < the 0.5 rails (P0)
 
     public static void Build()
     {
@@ -86,11 +87,24 @@ public static class ShowcaseSceneSetup
             if (agent.MaxStep < MinMaxStep) agent.MaxStep = MinMaxStep;
             EditorUtility.SetDirty(agent);
 
+            // (6b) CharacterController.stepOffset. The course has deliberate step-up lips the agent must MOUNT: 0.3
+            // curb-lips at each pit edge (the jump-off) + 0.4 decoy pads under each goal. The forked M6 agent's 0.15
+            // is too small (the P0 gates caught it: PIT/JUMP blocked at the curb, REACH starved at the pad). 0.45
+            // mounts both yet stays under the 0.5 containment rails. Set via SerializedObject (native m_StepOffset).
+            var cc = agent.GetComponent<CharacterController>();
+            if (cc == null)
+            { Debug.LogError("[ShowcaseScene] agent has no CharacterController"); EditorApplication.Exit(1); return; }
+            float stepOffsetBefore = cc.stepOffset;
+            var ccSo = new SerializedObject(cc);
+            ccSo.FindProperty("m_StepOffset").floatValue = StepOffset;
+            ccSo.ApplyModifiedProperties();
+
             // (7) Read back the in-memory wiring before saving (a typo'd path or a failed Apply shows up here).
             var agentReadSo = new SerializedObject(agent);
             float jpMem = agentReadSo.FindProperty("reward.jumpPenalty").floatValue;
             float dpMem = agentReadSo.FindProperty("reward.decoyPenalty").floatValue;
             float ppMem = agentReadSo.FindProperty("reward.pitPenalty").floatValue;
+            float soMem = new SerializedObject(agent.GetComponent<CharacterController>()).FindProperty("m_StepOffset").floatValue;
             var envReadSo = new SerializedObject(env);
             bool courseWiredMem = envReadSo.FindProperty("course").objectReferenceValue == course;
             var courseReadSo = new SerializedObject(course);
@@ -106,6 +120,7 @@ public static class ShowcaseSceneSetup
             assertOk &= Mathf.Approximately(ppMem, 0.25f);
             assertOk &= courseWiredMem && shaderWiredMem;
             assertOk &= agent.MaxStep >= MinMaxStep;
+            assertOk &= Mathf.Approximately(soMem, StepOffset);
             assertOk &= camOk && bpOk;
 
             // (8) Save as a COPY (the active scene stays Training_pixel — leaves the base untouched + gives a clean re-open).
@@ -115,6 +130,7 @@ public static class ShowcaseSceneSetup
             Debug.Log("[ShowcaseScene] IN-MEM: jumpPenalty=" + jpMem + " decoyPenalty=" + dpMem + " pitPenalty=" + ppMem +
                       " courseLayer=" + courseLayer + "(mask=" + staticMask + ") courseWired=" + courseWiredMem +
                       " shaderWired=" + shaderWiredMem + " maxStep=" + maxStepBefore + "->" + agent.MaxStep +
+                      " stepOffset=" + stepOffsetBefore + "->" + soMem +
                       " cam=" + (cs != null ? cs.Width + "x" + cs.Height : "NULL") +
                       " bp=" + (bp != null ? bp.BehaviorName + "/vec" + bp.BrainParameters.VectorObservationSize : "NULL") +
                       " saved=" + saved);
@@ -139,6 +155,8 @@ public static class ShowcaseSceneSetup
                     shaderDisk = new SerializedObject(course2).FindProperty("litShader").objectReferenceValue != null;
                 var cs2 = agent2.GetComponent<CameraSensorComponent>();
                 var bp2 = agent2.GetComponent<BehaviorParameters>();
+                var cc2 = agent2.GetComponent<CharacterController>();
+                float soDisk = cc2 != null ? new SerializedObject(cc2).FindProperty("m_StepOffset").floatValue : -1f;
                 bool camDisk = cs2 != null && cs2.Width == 84 && cs2.Height == 84;
                 bool bpDisk = bp2 != null && bp2.BehaviorName == "NavAgent" && bp2.BrainParameters.VectorObservationSize == 5;
                 int courseLayerDisk = course2 != null ? course2.gameObject.layer : -1;
@@ -155,13 +173,15 @@ public static class ShowcaseSceneSetup
                 diskOk &= Mathf.Approximately(dpDisk, 0.25f) && Mathf.Approximately(ppDisk, 0.25f);
                 diskOk &= courseDisk && shaderDisk;
                 diskOk &= agent2.MaxStep >= MinMaxStep;
+                diskOk &= cc2 != null && Mathf.Approximately(soDisk, StepOffset);
                 diskOk &= camDisk && bpDisk;
                 diskOk &= courseLayerDisk == courseLayer;
                 diskOk &= courseXformDisk;
 
                 Debug.Log("[ShowcaseScene] ON-DISK (" + ShowcaseScene + "): jumpPenalty=" + jpDisk +
                           " decoyPenalty=" + dpDisk + " pitPenalty=" + ppDisk + " course=" + courseDisk +
-                          " shader=" + shaderDisk + " maxStep=" + agent2.MaxStep + " courseLayer=" + courseLayerDisk +
+                          " shader=" + shaderDisk + " maxStep=" + agent2.MaxStep + " stepOffset=" + soDisk +
+                          " courseLayer=" + courseLayerDisk +
                           " courseXform=" + courseXformDisk + "(pos=" + (ct != null ? ct.position.ToString("F3") : "NULL") +
                           " rot=" + (ct != null ? ct.rotation.eulerAngles.ToString("F3") : "NULL") +
                           " scale=" + (ct != null ? ct.localScale.ToString("F3") : "NULL") + ")" +
