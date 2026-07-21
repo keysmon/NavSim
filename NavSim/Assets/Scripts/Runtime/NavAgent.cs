@@ -111,8 +111,9 @@ namespace NavSim.Runtime
             }
             else if (reached)
             {
-                // Continuous respawn: fresh triad, NO EndEpisode.
                 env.NotifyGoalReached();
+                if (env.EndsEpisodeOnGoal && !env.EvalMode) { EndEpisode(); return; }
+                // Continuous respawn (procedural scenes + eval): fresh triad, NO EndEpisode.
                 env.RespawnGoal(this);
                 dist = Vector3.Distance(transform.position, env.GoalPositionFor(this));
             }

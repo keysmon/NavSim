@@ -23,6 +23,9 @@ namespace NavSim.Runtime
         [SerializeField] private Transform goal;
         [SerializeField] private TerrainGenerator terrain;
         [SerializeField] private MoverController movers;
+        [Tooltip("SHOWCASE course spine. When assigned the env runs COURSE mode (fixed 5-stage geometry, " +
+                 "one episode per traversal); left null (every M5/M6/M7 scene) the env is byte-identical to before.")]
+        [SerializeField] private CourseBuilder course;
 
         [Header("Arena")]
         [SerializeField] private float arenaHalf = DifficultyMapper.M5ArenaHalf;
@@ -52,7 +55,13 @@ namespace NavSim.Runtime
         [SerializeField] private float killPlaneY = -3f;   // fall below this Y == pit fall
         [SerializeField] private float respawnSampleRadius = 6f;
 
-        public float KillPlaneY => killPlaneY;
+        // COURSE mode (course != null): fixed 5-stage showcase geometry, one episode per traversal. Inert when
+        // course is null — every existing scene keeps its procedural-terrain, continuous-respawn behaviour.
+        public CourseBuilder Course => course;          // read-only accessor for the demo UI
+        public bool CourseMode => course != null;       // Unity fake-null: explicit != null, never ??
+        public bool EndsEpisodeOnGoal => CourseMode;    // course ends the episode on success; procedural respawns a fresh triad
+
+        public float KillPlaneY => CourseMode ? CourseSpec.KillY : killPlaneY;
         public int GoalsReached { get; private set; }
         public int PitFalls { get; private set; }        // eval instrumentation (eval reads deltas)
         public float GoalRadius => goalRadius;            // eval measures reach against a captured target0
@@ -106,10 +115,17 @@ namespace NavSim.Runtime
         // the HARDEST rung so a resumed run never regresses. DEMO (no communicator): env-params are inert
         // (GetWithDefault always returns the default), so default to L0 — the easiest, most legible rung — and let
         // the demo UI drive the level. The IsCommunicatorOn branch makes this change byte-identical for training.
-        private int ReadDifficulty() => Mathf.Clamp(
-            Mathf.RoundToInt(Academy.Instance.EnvironmentParameters.GetWithDefault(
-                "difficulty", Academy.Instance.IsCommunicatorOn ? (float)(DifficultyMapper.NumLevels - 1) : 0f)),
-            0, DifficultyMapper.NumLevels - 1);
+        private int ReadDifficulty()
+        {
+            // Course mode ladders over CourseSpec's 5 stages; procedural mode over the M5 terrain levels. The `- 1`
+            // sits OUTSIDE the ternary and the SAME local feeds both the communicator-on default and the clamp
+            // bound, so with course == null this reduces EXACTLY to the pre-course DifficultyMapper.NumLevels - 1.
+            int maxLevel = (CourseMode ? CourseSpec.NumStages : DifficultyMapper.NumLevels) - 1;
+            return Mathf.Clamp(
+                Mathf.RoundToInt(Academy.Instance.EnvironmentParameters.GetWithDefault(
+                    "difficulty", Academy.Instance.IsCommunicatorOn ? (float)maxLevel : 0f)),
+                0, maxLevel);
+        }
 
         // Regenerate the layout for the current curriculum level. Called from NavAgent.OnEpisodeBegin, so a
         // fresh solvable arena is drawn every episode -> thousands of layouts, no memorisation.
@@ -139,6 +155,7 @@ namespace NavSim.Runtime
         // retrying the bake until spawn+goal connect. Then set the mover count on the live mesh.
         public void SetTerrainLevel(int level)
         {
+            if (CourseMode) { SetCourseStage(level); return; } // BEFORE the terrain guard — course mode never touches NavMesh
             if (terrain == null || agent == null || goal == null) return;
             EnsureTriad();
             TerrainLevel lvl = DifficultyMapper.ForTerrainLevel(level);
@@ -163,6 +180,53 @@ namespace NavSim.Runtime
             agent.NotifyGoalMoved();
             if (movers != null) movers.SetCount(lvl.Movers);
             _appliedLevel = level;
+        }
+
+        // === COURSE mode (course != null) ===
+        // Fixed showcase geometry: build the stage, place agent + triad off the pure layout, no NavMesh anywhere.
+
+        // A training draw of `stage`: random mirror + (stage 3 only) random pit variant, with spawn/lighting jitter.
+        private void SetCourseStage(int stage)
+        {
+            EnsureTriad();
+            bool mirrored = Random.value < 0.5f;
+            CourseVariant variant = stage == 3
+                ? (Random.value < 0.5f ? CourseVariant.SafeLoop : CourseVariant.NoLoop)
+                : CourseVariant.NoLoop; // stages 0-2 have no pit (value unused); stage 4 self-forces NoLoop in CourseSpec
+            ApplyCourse(stage, mirrored, variant, jitter: true);
+        }
+
+        // Shared by training draws (jitter) and ForceCourse (deterministic). Places agent + triad off the layout.
+        private void ApplyCourse(int stage, bool mirrored, CourseVariant variant, bool jitter)
+        {
+            course.Build(stage, mirrored, variant);
+            CourseLayout lay = course.CurrentLayout;
+            Vector3 spawn = lay.SpawnPos;
+            float yaw = lay.SpawnYawDeg; // X-mirror preserves +Z-forward, so mirror does not change spawn yaw
+            if (jitter) { spawn.x += Random.Range(-1f, 1f); yaw += Random.Range(-15f, 15f); }
+            PlaceAt(agent, spawn, yaw);
+            for (int i = 0; i < 3; i++) _goals[i].position = lay.GoalSlots[i];
+            AssignColorsAndTarget();
+            agent.NotifyGoalMoved();
+            if (movers != null) movers.SetCount(0);
+            if (jitter) JitterLighting();
+            _appliedLevel = stage;
+        }
+
+        private void JitterLighting()
+        {
+            if (_sun == null) { var l = FindAnyObjectByType<Light>(); if (l != null && l.type == LightType.Directional) _sun = l; }
+            if (_sun == null) return;
+            _sun.transform.rotation = Quaternion.Euler(45f + Random.Range(-6f, 6f), -35f + Random.Range(-10f, 10f), 0f);
+            _sun.intensity = 1f + Random.Range(-0.1f, 0.1f);
+        }
+        private Light _sun;
+
+        // Deterministic course apply for eval/demo (no spawn jitter, no lighting jitter).
+        public void ForceCourse(int stage, bool mirrored, CourseVariant variant)
+        {
+            EnsureTriad();
+            ApplyCourse(stage, mirrored, variant, jitter: false);
         }
 
         // Place all 3 goals at distinct, reachable, far-enough-apart positions, then assign colors + the target.
@@ -353,6 +417,9 @@ namespace NavSim.Runtime
         // Continuous respawn on reaching the target: a fresh triad on the SAME baked terrain (no EndEpisode).
         public void RespawnGoal(NavAgent a)
         {
+            // Course mode reaches RespawnGoal ONLY via the EvalMode continuous-respawn path (training ends the
+            // episode on success). Same fixed geometry — just redraw colours + re-home the shaping baseline (advisor T8).
+            if (CourseMode) { AssignColorsAndTarget(); a.NotifyGoalMoved(); return; }
             int level = _appliedLevel < 0 ? 0 : _appliedLevel;
             TerrainLevel lvl = DifficultyMapper.ForTerrainLevel(level);
             PlaceTriad(lvl, a.transform.position, level);
@@ -378,6 +445,8 @@ namespace NavSim.Runtime
         // keeping episode + LSTM memory. Never a shortcut toward the goal — re-homes near the fall site.
         public void RespawnToSafeGround(NavAgent a)
         {
+            // Course mode: no NavMesh — teleport to the stage's authored pre-pit anchor, keep the agent's heading.
+            if (CourseMode) { PitFalls++; PlaceAt(a, course.CurrentLayout.PitRespawnPos, a.transform.eulerAngles.y); a.NotifyGoalMoved(); return; }
             PitFalls++;
             Vector3 p = a.transform.position; p.y = 1f;
             if (NavMesh.SamplePosition(p, out NavMeshHit hit, respawnSampleRadius, NavMesh.AllAreas))
@@ -387,14 +456,18 @@ namespace NavSim.Runtime
             a.NotifyGoalMoved();
         }
 
-        // Teleport a CharacterController agent (disable the controller around a direct transform write; it
-        // caches its own position and would otherwise fight the move).
-        private void PlaceAt(NavAgent a, Vector3 pos)
+        // Random-heading placement (procedural terrain). Delegates with EXACTLY one Random.Range(0f, 360f) draw at
+        // the same stream position as before the course refactor, so existing (course == null) layouts stay byte-identical.
+        private void PlaceAt(NavAgent a, Vector3 pos) => PlaceAt(a, pos, Random.Range(0f, 360f));
+
+        // Teleport a CharacterController agent to an explicit heading (disable the controller around a direct
+        // transform write; it caches its own position and would otherwise fight the move).
+        private void PlaceAt(NavAgent a, Vector3 pos, float yawDeg)
         {
             CharacterController cc = a.GetComponent<CharacterController>();
             if (cc != null) cc.enabled = false;
             a.transform.position = pos;
-            a.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            a.transform.rotation = Quaternion.Euler(0f, yawDeg, 0f);
             if (cc != null) cc.enabled = true;
         }
 
