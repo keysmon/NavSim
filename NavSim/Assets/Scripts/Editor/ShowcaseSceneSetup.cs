@@ -142,6 +142,14 @@ public static class ShowcaseSceneSetup
                 bool camDisk = cs2 != null && cs2.Width == 84 && cs2.Height == 84;
                 bool bpDisk = bp2 != null && bp2.BehaviorName == "NavAgent" && bp2.BrainParameters.VectorObservationSize == 5;
                 int courseLayerDisk = course2 != null ? course2.gameObject.layer : -1;
+                // Course primitives are placed in WORLD space, so the builder transform MUST be an identity
+                // frame (origin / no rotation / unit scale) or every piece is offset/rotated/scaled. Vector3
+                // and Quaternion == compare with Unity's built-in tolerance.
+                Transform ct = course2 != null ? course2.transform : null;
+                bool courseXformDisk = ct != null
+                    && ct.position == Vector3.zero
+                    && ct.rotation == Quaternion.identity
+                    && ct.localScale == Vector3.one;
 
                 diskOk &= Mathf.Approximately(jpDisk, JumpPenalty);
                 diskOk &= Mathf.Approximately(dpDisk, 0.25f) && Mathf.Approximately(ppDisk, 0.25f);
@@ -149,10 +157,14 @@ public static class ShowcaseSceneSetup
                 diskOk &= agent2.MaxStep >= MinMaxStep;
                 diskOk &= camDisk && bpDisk;
                 diskOk &= courseLayerDisk == courseLayer;
+                diskOk &= courseXformDisk;
 
                 Debug.Log("[ShowcaseScene] ON-DISK (" + ShowcaseScene + "): jumpPenalty=" + jpDisk +
                           " decoyPenalty=" + dpDisk + " pitPenalty=" + ppDisk + " course=" + courseDisk +
                           " shader=" + shaderDisk + " maxStep=" + agent2.MaxStep + " courseLayer=" + courseLayerDisk +
+                          " courseXform=" + courseXformDisk + "(pos=" + (ct != null ? ct.position.ToString("F3") : "NULL") +
+                          " rot=" + (ct != null ? ct.rotation.eulerAngles.ToString("F3") : "NULL") +
+                          " scale=" + (ct != null ? ct.localScale.ToString("F3") : "NULL") + ")" +
                           " cam=" + (cs2 != null ? cs2.Width + "x" + cs2.Height : "NULL") +
                           " bp=" + (bp2 != null ? bp2.BehaviorName + "/vec" + bp2.BrainParameters.VectorObservationSize : "NULL"));
             }
