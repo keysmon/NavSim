@@ -176,22 +176,12 @@ public static class ShowcaseP0Gates
 
     private static void ForceStage(int stage, bool mirrored, CourseVariant variant)
     {
-        // CourseBuilder.ClearPieces uses Destroy() in Play mode, which is DEFERRED to end-of-frame — but the whole
-        // gate battery runs synchronously in one frame, so without this the PRIOR stage's colliders linger as ghosts
-        // (a stage-0 probe was occluded by a stage-2 ramp). Synchronously remove them; CourseBuilder null-checks its
-        // piece list, so it rebuilds cleanly. The goal triad lives under "Environment", not Course — untouched.
-        ClearCourseChildrenImmediate();
+        // CourseBuilder.ClearPieces now DestroyImmediate's the prior stage's pieces (root fix), so a same-frame rebuild
+        // is ghost-free even though the whole gate battery runs synchronously in one frame. The goal triad lives under
+        // "Environment", not Course — untouched.
         _env.ForceCourse(stage, mirrored, variant);
         Physics.SyncTransforms();
         for (int i = 0; i < SettleSteps; i++) Step(0f, 0f, 0); // re-ground the CC before we read isGrounded/drive
-    }
-
-    private static void ClearCourseChildrenImmediate()
-    {
-        Transform root = _env.Course.transform;
-        var kids = new List<GameObject>();
-        for (int i = 0; i < root.childCount; i++) kids.Add(root.GetChild(i).gameObject);
-        foreach (var k in kids) Object.DestroyImmediate(k);
     }
 
     // Steer toward a waypoint on XZ. SignedAngle(forward, dir, up) is +ve when the target is to the agent's right,

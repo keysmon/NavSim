@@ -58,11 +58,17 @@ namespace NavSim.Runtime
 
         private void ClearPieces()
         {
+            // DestroyImmediate in BOTH edit and play mode. The pieces are owned, unreferenced, full-teardown objects,
+            // so immediate teardown is the textbook case — and it is REQUIRED for correctness under a headless eval
+            // that rebuilds many stages inside ONE editor update tick: deferred Destroy() is flushed at end-of-frame,
+            // which never arrives there, so the "destroyed" pieces would linger as ghost colliders and accumulate
+            // across stages (ShowcaseEvalBatch's grid corruption). Immediate teardown is also cleaner for real-frame
+            // Play (the demo/WebGL re-rolls) — it removes the one-frame ghost. Build() is only ever called on a stage
+            // switch (UI click) or an episode boundary, never inside a physics/render callback, so this is safe.
             for (int i = 0; i < _pieces.Count; i++)
             {
                 if (_pieces[i] == null) continue;
-                if (Application.isPlaying) Destroy(_pieces[i]);
-                else DestroyImmediate(_pieces[i]);
+                DestroyImmediate(_pieces[i]);
             }
             _pieces.Clear();
         }
