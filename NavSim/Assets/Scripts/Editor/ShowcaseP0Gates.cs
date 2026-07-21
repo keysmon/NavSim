@@ -34,7 +34,7 @@ public static class ShowcaseP0Gates
     private const float WaypointRadius = 0.8f;
     private const float SlotReach = 1.45f;   // just under env.GoalRadius (1.5)
     private const float TurnDeg = 6f;        // NavAgent.maxTurnDegPerStep
-    private const float FlankX = 3.75f;      // open-flank offset (walls span ±... ; 3.75 clears both wall + curb)
+    private const float DeckHalf = 6f;       // CourseSpec Deck() spans x [-6, 6] (curbs sit just outside at ±6.15)
     private const float JumpLateWindow = 0.4f; // fire the lip jump only when grounded in [lipZ-this, lipZ+0.2] (bias LATE)
     private const int PitFallBudget = 400;   // "y<KillY within 400 steps of crossing the lip"
 
@@ -43,12 +43,19 @@ public static class ShowcaseP0Gates
     private static CharacterController _cc;
     private static float _dt;
     private static int _frames;
+    private static bool _savedEpmoEnabled;               // snapshot of the tracked EditorSettings play-mode options
+    private static EnterPlayModeOptions _savedEpmo;      // (restored before Exit so EditorSettings.asset stays un-dirtied)
     private static readonly StringBuilder _report = new StringBuilder();
     private static bool _allPass = true;
     private static int _runs, _passes;
 
     public static void Run()
     {
+        // Snapshot the tracked EditorSettings play-mode options BEFORE mutating them, so we can restore the exact
+        // prior values before Exit — the git-tracked ProjectSettings/EditorSettings.asset must be un-dirtiable
+        // regardless of Unity's on-exit flush behavior. (DisableDomainReload keeps these statics alive into Tick.)
+        _savedEpmoEnabled = EditorSettings.enterPlayModeOptionsEnabled;
+        _savedEpmo = EditorSettings.enterPlayModeOptions;
         try
         {
             EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
@@ -63,6 +70,7 @@ public static class ShowcaseP0Gates
         }
         catch (System.Exception e)
         {
+            RestoreEditorSettings();
             Debug.LogError("[P0] Run setup FAILED: " + e);
             EditorApplication.Exit(2);
         }
@@ -74,10 +82,17 @@ public static class ShowcaseP0Gates
         _frames++;
         if (_frames < WarmupFrames) return;
         EditorApplication.update -= Tick;
-        int code;
+        int code = 2;
         try { code = RunGates(); }
         catch (System.Exception e) { Debug.LogError("[P0] EXCEPTION: " + e); code = 2; }
+        finally { RestoreEditorSettings(); } // un-dirty the tracked EditorSettings.asset before we exit, always
         EditorApplication.Exit(code);
+    }
+
+    private static void RestoreEditorSettings()
+    {
+        EditorSettings.enterPlayModeOptionsEnabled = _savedEpmoEnabled;
+        EditorSettings.enterPlayModeOptions = _savedEpmo;
     }
 
     private static int RunGates()
@@ -248,42 +263,77 @@ public static class ShowcaseP0Gates
         return true;
     }
 
-    // Mirror-aware waypoint route to the slot cluster, read from the LIVE layout (never a hardcoded handedness).
+    // Waypoint route to the slot cluster, DERIVED from the LIVE (already-mirrored) layout — ramp Z from RampZMin/Max,
+    // gap Z from GapZMin/Max, flank X + wall Z from the actual wall pieces (OpenFlankX) — so it carries no hardcoded
+    // handedness or CourseSpec geometry duplication. The only literals left are small approach margins (the +-few-unit
+    // offsets that put a flank waypoint safely before/after each wall); the steering + WaypointRadius absorb their slack.
     private static List<Vector3> RouteFor(CourseLayout lay)
     {
         var wps = new List<Vector3>();
-        float sign = lay.Mirrored ? -1f : 1f;           // single-wall open flank (unmirrored = +X); negate under mirror
         Vector3 W(float x, float z) => new Vector3(x, 0f, z); // y ignored (steering is XZ-only)
+        float rampBase = lay.RampZMin, rampTop = lay.RampZMax; // 6 -> 12 (0-width for the flat stage 0)
         switch (lay.Stage)
         {
-            case 0:
+            case 0: // flat: straight to the reveal-ring centre
                 wps.Add(RingCentre(lay.GoalSlots));
                 break;
             case 1: // ramp -> deck
-                wps.Add(W(0f, 6f)); wps.Add(W(0f, 12f)); wps.Add(W(0f, 15f));
+                wps.Add(W(0f, rampBase)); wps.Add(W(0f, rampTop)); wps.Add(W(0f, rampTop + 3f));
                 break;
-            case 2: // ramp -> right-flank detour around the wall (Z=26) -> slots
-                wps.Add(W(0f, 6f)); wps.Add(W(0f, 12f));
-                wps.Add(W(sign * FlankX, 22f)); wps.Add(W(sign * FlankX, 30f));
+            case 2: // ramp -> open-flank detour around the single "Wall" (blocks x[-2.5,1.5] unmirrored) -> slots (no pit)
+            {
+                TryFindPiece(lay, "Wall", out CoursePiece wall);
+                float fx = OpenFlankX(wall), wz = wall.Pos.z;
+                wps.Add(W(0f, rampBase)); wps.Add(W(0f, rampTop));
+                wps.Add(W(fx, wz - 4f)); wps.Add(W(fx, wz + 4f)); // on the flank before the wall, off well past it
                 break;
-            case 3: // ramp -> flank around wall (Z=24) -> re-center pre-lip -> JUMP -> deck B -> slots
-                wps.Add(W(0f, 6f)); wps.Add(W(0f, 12f));
-                wps.Add(W(sign * FlankX, 20f)); wps.Add(W(sign * FlankX, 25f));
-                wps.Add(W(0f, lay.GapZMin - 1.5f));     // pre-lip (26.5)
-                wps.Add(W(0f, lay.GapZMax + 3f));       // deck B landing (33.2)
+            }
+            case 3: // ramp -> flank around "Wall" -> re-center at the pre-lip -> JUMP the gap -> deck B -> slots
+            {
+                TryFindPiece(lay, "Wall", out CoursePiece wall);
+                float fx = OpenFlankX(wall), wz = wall.Pos.z;
+                wps.Add(W(0f, rampBase)); wps.Add(W(0f, rampTop));
+                wps.Add(W(fx, wz - 4f)); wps.Add(W(fx, wz + 1f));
+                wps.Add(W(0f, lay.GapZMin - 1.5f));     // pre-lip: straighten to +Z just before the gap's near edge
+                wps.Add(W(0f, lay.GapZMax + 3f));       // deck B landing, past the gap's far edge
                 break;
-            case 4: // ramp -> S-bend (WallA Z=20 open one side, WallB Z=26 the other) -> pre-lip -> JUMP -> deck B
-                float flankA = sign * FlankX;           // WallA open flank
-                float flankB = -sign * FlankX;          // WallB open flank (opposite side)
-                wps.Add(W(0f, 6f)); wps.Add(W(0f, 12f));
-                wps.Add(W(flankA, 17f)); wps.Add(W(flankA, 21f));
-                wps.Add(W(0f, 23f));                    // between-walls midpoint
-                wps.Add(W(flankB, 25f)); wps.Add(W(flankB, 28f));
-                wps.Add(W(0f, lay.GapZMin - 1.5f));     // pre-lip (28.5)
-                wps.Add(W(0f, lay.GapZMax + 3f));       // deck B landing (35.2)
+            }
+            case 4: // ramp -> S-bend (WallA blocks x[-6,1.5] open RIGHT; WallB blocks x[-1.5,6] open LEFT, unmirrored) ->
+            {       // pre-lip -> JUMP -> deck B. OpenFlankX reads each already-mirrored piece, so the S alternates for free.
+                TryFindPiece(lay, "WallA", out CoursePiece wa);
+                TryFindPiece(lay, "WallB", out CoursePiece wb);
+                float ax = OpenFlankX(wa), az = wa.Pos.z;
+                float bx = OpenFlankX(wb), bz = wb.Pos.z;
+                wps.Add(W(0f, rampBase)); wps.Add(W(0f, rampTop));
+                wps.Add(W(ax, az - 3f)); wps.Add(W(ax, az + 1f));
+                wps.Add(W(0f, (az + bz) * 0.5f));       // between-walls midpoint
+                wps.Add(W(bx, bz - 1f)); wps.Add(W(bx, bz + 2f));
+                wps.Add(W(0f, lay.GapZMin - 1.5f));     // pre-lip
+                wps.Add(W(0f, lay.GapZMax + 3f));       // deck B landing
                 break;
+            }
         }
         return wps;
+    }
+
+    // Find a course piece by name in the (already-mirrored) layout. The stage 2/3/4 walls are ALWAYS emitted by
+    // CourseSpec, so callers dereference the out piece directly; a false return leaves `piece` = default (a zero-extent
+    // wall), which would misroute and the gate would fail loudly — the honest signal for a missing piece.
+    private static bool TryFindPiece(CourseLayout lay, string name, out CoursePiece piece)
+    {
+        foreach (var p in lay.Pieces) if (p.Name == name) { piece = p; return true; }
+        piece = default;
+        return false;
+    }
+
+    // Open-flank midpoint x for a wall: it blocks x in [px - sx/2, px + sx/2]; return the midpoint of the WIDER open
+    // side toward the deck edge (|x| <= DeckHalf). Reads the ALREADY-MIRRORED piece (mirror baked into px), so it needs
+    // no hardcoded handedness. Single "Wall" blocks [-2.5,1.5] -> +3.75; WallA [-6,1.5] -> +3.75; WallB [-1.5,6] -> -3.75.
+    private static float OpenFlankX(CoursePiece wall)
+    {
+        float lo = wall.Pos.x - wall.Scale.x * 0.5f;
+        float hi = wall.Pos.x + wall.Scale.x * 0.5f;
+        return (DeckHalf - hi) >= (lo + DeckHalf) ? (hi + DeckHalf) * 0.5f : (lo - DeckHalf) * 0.5f;
     }
 
     private static Vector3 RingCentre(Vector3[] slots)
