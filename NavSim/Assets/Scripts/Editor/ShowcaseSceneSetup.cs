@@ -138,7 +138,8 @@ public static class ShowcaseSceneSetup
                       " saved=" + saved);
 
             // (9) LOAD-BEARING: re-open the SAVED FILE and re-verify. The Task-1 trap is a stale value ON DISK; only a
-            // re-read from Training_showcase.unity proves the 3M run will actually consume jumpPenalty==0.02.
+            // re-read from Training_showcase.unity proves a training run will actually consume jumpPenalty==JumpPenalty
+            // (the shipped ext2 value above), not a stale serialized one.
             EditorSceneManager.OpenScene(ShowcaseScene, OpenSceneMode.Single);
             var env2 = Object.FindAnyObjectByType<NavEnvironment>();
             var agent2 = Object.FindAnyObjectByType<NavAgent>();
