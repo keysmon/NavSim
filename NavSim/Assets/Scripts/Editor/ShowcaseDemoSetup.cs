@@ -21,7 +21,7 @@ public static class ShowcaseDemoSetup
 {
     private const string BaseScene = "Assets/Scenes/Training_showcase.unity";
     private const string DemoScene = "Assets/Scenes/Demo_Showcase.unity";
-    private const string ModelPath = "Assets/Models/Showcase/showcase_s0.onnx";
+    private const string ModelPath = "Assets/Models/Showcase/showcase_ext2.onnx"; // the ext2 dual-bar shipping policy
     private const string WebGLOut  = "Builds/WebGL_ShowcaseDemo";
 
     // Inference backend for the browser. Default == Burst == the CPU path, the WebGL-safe first choice (ComputeShader
@@ -85,7 +85,7 @@ public static class ShowcaseDemoSetup
             spec.transform.LookAt(stage0.CameraLookAt);
 
             // (4) camera director: glides the spectator to the current stage's hero pose each frame.
-            var rig = spec.GetComponent<DemoCameraRig>() ?? spec.gameObject.AddComponent<DemoCameraRig>();
+            var rig = GetOrAdd<DemoCameraRig>(spec.gameObject);
             var rigSo = new SerializedObject(rig);
             rigSo.FindProperty("cam").objectReferenceValue = spec;
             rigSo.FindProperty("env").objectReferenceValue = env;
@@ -95,7 +95,7 @@ public static class ShowcaseDemoSetup
             // that layer) never sees the trail — it shows ONLY on the spectator cam, exactly as intended. Reuse the
             // CourseBuilder's litShader (a real Standard-shader asset wired in the scene) so the gray material
             // survives WebGL shader-stripping; Shader.Find("Standard") is an Editor-only fallback that would NOT.
-            var trail = agent.GetComponent<TrailRenderer>() ?? agent.gameObject.AddComponent<TrailRenderer>();
+            var trail = GetOrAdd<TrailRenderer>(agent.gameObject);
             trail.time = 3f;
             trail.startWidth = 0.15f;
             trail.endWidth = 0f;
@@ -104,8 +104,8 @@ public static class ShowcaseDemoSetup
             trail.sharedMaterial = MakeTrailMaterial();
 
             // (6) presentation overlay wired to env + agent + eyeCam (all private [SerializeField]).
-            var uiGo = GameObject.Find("DemoUI") ?? new GameObject("DemoUI");
-            var ui = uiGo.GetComponent<ShowcaseDemoUI>() ?? uiGo.AddComponent<ShowcaseDemoUI>();
+            var uiGo = GameObject.Find("DemoUI") ?? new GameObject("DemoUI"); // Find returns real null when absent, so ?? is safe here
+            var ui = GetOrAdd<ShowcaseDemoUI>(uiGo);
             var uiSo = new SerializedObject(ui);
             uiSo.FindProperty("env").objectReferenceValue = env;
             uiSo.FindProperty("agent").objectReferenceValue = agent;
@@ -140,6 +140,17 @@ public static class ShowcaseDemoSetup
             Debug.LogError("[ShowcaseDemo] Build FAILED: " + e);
             EditorApplication.Exit(2);
         }
+    }
+
+    // Fake-null-safe get-or-add. The `GetComponent<T>() ?? AddComponent<T>()` shorthand is UNSAFE in Unity: `??` uses
+    // reference equality and bypasses UnityEngine.Object's overloaded ==, so a fake-null returned by GetComponent for a
+    // missing component (observed here for the built-in TrailRenderer under 6000.5) passes through as non-null and
+    // AddComponent never runs — the next member access then throws MissingComponentException. The `!= null` below DOES
+    // invoke the overload, so it correctly distinguishes an absent component from a live one.
+    private static T GetOrAdd<T>(GameObject go) where T : Component
+    {
+        T existing = go.GetComponent<T>();
+        return existing != null ? existing : go.AddComponent<T>();
     }
 
     // Matte light-gray trail material, built the CourseBuilder way (new Material(litShader) + matte Standard knobs).
