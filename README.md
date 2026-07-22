@@ -5,7 +5,8 @@ Each milestone poses one question, answers it with a rigorous paired / multi-see
 The through-line is rigor and honesty: negative results are reported unforced, claims and decision rules are pre-registered before any compute is spent, statistics are multi-seed, and every headline is verified by driving the real system rather than by trusting a training curve.
 The arc runs from a 2D foundation (M0-M4: crowds, curricula, hidden-goal search) into 3D (M5-M7: terrain search, visual object-goal search, cooperative credit assignment).
 
-**Live demo:** https://navsim-webgl.vercel.app
+**Live demo:** https://navsim-webgl.vercel.app - the Showcase: a trained pixel policy runs a curated five-stage challenge course ("Open room / The ramp / The wall / The gap / The gauntlet") live in your browser.
+Watch its actual 84x84 CNN input in the corner inset (the border flashes red the moment it truly sees the target), read the live behavior captions, re-roll mirrored layouts, and switch stages.
 
 ![Capstone stage](docs/capstone/capstone.png)
 
@@ -57,6 +58,14 @@ Each row is one question and its honest answer.
   A curated, deliberately-composed challenge course with a single legible critical path - ramp -> raised ledge -> occluding wall -> risk/reward pit gap -> the red-target-among-decoys reveal - demonstrating the visual-search task on hand-authored terrain.
   Built by `NavSim/Assets/Scripts/Editor/CapstoneSceneSetup.cs` (`Assets/Scenes/Capstone.unity`).
 
+- **Showcase - the playable capstone (the live demo).**
+  The capstone made real: a pixel policy (84x84 egocentric RGB, from-scratch `nature_cnn` + LSTM) trained from scratch on a playable five-stage version of the course, with a flat per-jump penalty so jumping is a learned *choice*, not a tic.
+  Stages unlock beats - open-room discrimination, the ramp, the occluding wall, a jumpable pit gap (with and without a safe detour), and a gauntlet finale (S-bend double occluder + mandatory jump).
+  Training took three runs to earn its numbers honestly: a 3M base (perfect on stages 1-3, partial on the jump stages), a 2M extension that mastered the jumps but amplified pointless flat-ground hopping, and a final 1M extension with a raised jump penalty that kept success while cutting the pointless hops 3-4x.
+  Final held-out rates (300 stochastic episodes, per-episode reset, both mirror states): **0.96 / 0.98 / 1.00 / 0.99 / 1.00** across the five stages, and every no-detour gap success used the jump.
+  Honest residue: about one stray hop per run remains (the jump is a ~30%-probability sampled action under the deployed stochastic policy), and routes on a fixed curated course are intentionally learned - the generalization result stays with M6's procedurally-randomized study.
+  The eval harness earned its own war stories: it caught deferred-destroy ghost colliders, an argmax-vs-sampling inference gap that silently zeroed the jump, and an LSTM-carryover confound - each root-caused and closed before any number was trusted.
+
 ## What makes it research, not a reel
 
 - **Unforced negatives.**
@@ -74,7 +83,7 @@ Each row is one question and its honest answer.
 ## Future work
 
 - **M8 (CI/CD)** - automated `game-ci` build and deploy - is intentionally scoped out of this wrap.
-- Turning the capstone into a fully playable, *trained* level (a live policy running the hand-authored course end to end).
+- A side-by-side pixel-vs-ray arm comparison in the live demo (blocked on per-environment RNG injection).
 
 ## Tech stack
 
