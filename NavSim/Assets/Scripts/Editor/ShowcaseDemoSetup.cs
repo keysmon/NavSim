@@ -63,6 +63,32 @@ public static class ShowcaseDemoSetup
                 if (eyeCam.CompareTag("MainCamera")) eyeCam.tag = "Untagged"; // only the spectator is MainCamera
             }
 
+            // (2b) DEMO-ONLY body retint. The base agent renders saturated RED — the SAME semantic channel as the red
+            // target — so a find-the-red demo shows two red things. Repaint the agent body to a neutral charcoal that is
+            // deliberately OFF the goal/decoy palette (the spawn-marker family) so ONLY the goal is red. The agent body
+            // is on the "Agent" layer that the eye cam culls, so the CNN input the policy actually sees is UNTOUCHED —
+            // this only changes the spectator's third-person view. Swap sharedMaterial on every body renderer (all slots),
+            // excluding trail/line/particle renderers; HARD-FAIL if none are found (body not under the agent would ship
+            // a still-red agent that only surfaces in a screenshot).
+            Material bodyMat = MakeAgentMaterial();
+            int retinted = 0;
+            foreach (var r in agent.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r is TrailRenderer || r is LineRenderer || r is ParticleSystemRenderer) continue;
+                var slots = r.sharedMaterials;
+                for (int i = 0; i < slots.Length; i++) slots[i] = bodyMat;
+                r.sharedMaterials = slots;
+                EditorUtility.SetDirty(r);
+                retinted++;
+                Debug.Log("[ShowcaseDemo] retinted body renderer: " + r.name + " (" + r.GetType().Name + ", slots=" + slots.Length + ")");
+            }
+            if (retinted == 0)
+            {
+                Debug.LogError("[ShowcaseDemo] agent body retint found ZERO renderers under " + agent.name +
+                               " — body not under the agent transform; would ship a RED agent");
+                EditorApplication.Exit(1); return;
+            }
+
             // (3) 3rd-person spectator camera the VISITOR sees. Reconfigure the base scene's non-eye camera or create
             // one. cullingMask = everything INCLUDING the Agent layer — the pixel arm culls the agent body from its
             // EYE cam, but the spectator must SEE the agent (and its trail). DemoCameraRig drives the pose each frame;
@@ -127,12 +153,14 @@ public static class ShowcaseDemoSetup
                 && rigSo.FindProperty("cam").objectReferenceValue != null
                 && rigSo.FindProperty("env").objectReferenceValue != null
                 && uiWired
-                && trail.sharedMaterial != null;
+                && trail.sharedMaterial != null
+                && retinted > 0;
             Debug.Log("[ShowcaseDemo] saved=" + ok + " model=" + (bp.Model != null ? bp.Model.name : "NULL") +
                       " device=" + InferDevice + " behavior=" + bp.BehaviorType +
                       " eyeCam=" + (eyeCam != null ? eyeCam.name : "NULL") +
                       " spectator=" + spec.name + "(tag=" + spec.tag + ")" +
-                      " uiWired=" + uiWired + " -> " + DemoScene + " assertOk=" + assertOk);
+                      " uiWired=" + uiWired + " agentRetinted=" + retinted +
+                      " -> " + DemoScene + " assertOk=" + assertOk);
             EditorApplication.Exit(assertOk ? 0 : 1);
         }
         catch (System.Exception e)
@@ -140,6 +168,27 @@ public static class ShowcaseDemoSetup
             Debug.LogError("[ShowcaseDemo] Build FAILED: " + e);
             EditorApplication.Exit(2);
         }
+    }
+
+    // DEMO-ONLY agent body colour — the SINGLE knob for the retint. Neutral charcoal, deliberately OFF the goal/decoy
+    // palette (red/magenta/green/yellow) so the spectator sees exactly one red thing (the goal). Flip toward white for a
+    // lighter "spawn-marker family" tone if preferred (the spawn marker itself is ~0.76 gray) — one line changes it.
+    private static readonly Color AgentBodyColor = new Color(0.24f, 0.25f, 0.27f); // charcoal
+
+    // Agent body material, built the CourseBuilder way (new Material(litShader)) so it survives WebGL shader-stripping,
+    // exactly like MakeTrailMaterial. Assigns a NEW material (never mutates the shared NavColor*.mat asset).
+    private static Material MakeAgentMaterial()
+    {
+        Shader shader = null;
+        var course = Object.FindAnyObjectByType<CourseBuilder>();
+        if (course != null)
+            shader = new SerializedObject(course).FindProperty("litShader").objectReferenceValue as Shader;
+        if (shader == null) shader = Shader.Find("Standard"); // Editor-only fallback (stripped from a player build)
+        var mat = new Material(shader) { name = "ShowcaseAgentBody" };
+        mat.SetColor("_Color", AgentBodyColor);
+        mat.SetFloat("_Glossiness", 0.2f);
+        mat.SetFloat("_Metallic", 0f);
+        return mat;
     }
 
     // Fake-null-safe get-or-add. The `GetComponent<T>() ?? AddComponent<T>()` shorthand is UNSAFE in Unity: `??` uses

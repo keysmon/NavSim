@@ -82,22 +82,31 @@ namespace NavSim.Runtime
             _caption = ComputeCaption(now, p);
         }
 
-        // Priority state machine (highest first): flashes > airborne > sighted > on-ramp > scanning.
+        // Priority state machine (highest first): flashes > (gap-)jump > sighted > on-ramp > scanning.
         private string ComputeCaption(float now, Vector3 agentPos)
         {
             if (now < _goalFlashUntil) return CapFound;
             if (now < _decoyFlashUntil) return CapDecoy;
+
+            CourseBuilder course = env.Course;                          // Unity fake-null aware (real null off a course scene)
+            CourseLayout lay = course != null ? course.CurrentLayout : default;
+
+            // "Jumping the gap" ONLY when the stage actually HAS a gap (GapZMax > GapZMin) AND the agent is over/near it.
+            // A residual flat hop on a gapless stage - or anywhere away from the pit - must not narrate a crossing it
+            // isn't making; those airborne frames fall through to the normal sighted/ramp/scanning priority. The gap runs
+            // along Z and the mirror only flips X, so this Z-window is mirror-invariant; [GapZMin-3.5, GapZMax+1] brackets
+            // the takeoff run-up through the landing.
             bool grounded = _cc == null || _cc.isGrounded;
-            if (!grounded) return CapJump;
+            if (!grounded && course != null && lay.GapZMax > lay.GapZMin
+                && agentPos.z >= lay.GapZMin - 3.5f && agentPos.z <= lay.GapZMax + 1f)
+                return CapJump;
+
             if (_sighted) return CapSighted;
+
             // On the ramp: grounded AND agent z within the stage's ramp band (0-width band == stage has no ramp).
-            CourseBuilder course = env.Course;
-            if (course != null)
-            {
-                CourseLayout lay = course.CurrentLayout;
-                if (lay.RampZMax > lay.RampZMin && agentPos.z >= lay.RampZMin && agentPos.z <= lay.RampZMax)
-                    return CapRamp;
-            }
+            if (course != null && lay.RampZMax > lay.RampZMin && agentPos.z >= lay.RampZMin && agentPos.z <= lay.RampZMax)
+                return CapRamp;
+
             return CapScan;
         }
 
@@ -119,7 +128,7 @@ namespace NavSim.Runtime
                 Random.InitState(System.Environment.TickCount);
                 if (env != null) env.SetTerrainLevel(env.CurrentLevel);
             }
-            GUI.Label(new Rect(158f, 14f, 168f, 24f), "Find the <color=red>RED</color> sphere", _titleStyle);
+            GUI.Label(new Rect(158f, 14f, 168f, 24f), "Find the <color=red>RED</color> goal", _titleStyle);
 
             // Stage selector: 5 buttons "1".."5" -> stages 0..4; the active stage is highlighted and named.
             int stage = env != null ? env.CurrentLevel : 0;
