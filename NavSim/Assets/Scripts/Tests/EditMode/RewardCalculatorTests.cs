@@ -11,7 +11,7 @@ namespace NavSim.Tests.EditMode
         public void Step_ShapingApplied_WhenGoalVisible()
         {
             var cfg = RewardConfig.Default; // shapingScale 0.05, stepPenalty 0.001
-            float r = RewardCalculator.Step(10f, 8f, false, cfg, goalVisible: true, fellInPit: false);
+            float r = RewardCalculator.Step(10f, 8f, false, cfg, goalVisible: true, fellInPit: false, jumped: false);
             Assert.AreEqual(2f * cfg.shapingScale - cfg.stepPenalty, r, 1e-5f); // moved 2 closer
         }
 
@@ -19,7 +19,7 @@ namespace NavSim.Tests.EditMode
         public void Step_MovingAwayWhileVisible_YieldsNegative()
         {
             var cfg = RewardConfig.Default;
-            Assert.Less(RewardCalculator.Step(8f, 10f, false, cfg, goalVisible: true, fellInPit: false), 0f);
+            Assert.Less(RewardCalculator.Step(8f, 10f, false, cfg, goalVisible: true, fellInPit: false, jumped: false), 0f);
         }
 
         [Test]
@@ -28,7 +28,7 @@ namespace NavSim.Tests.EditMode
             var cfg = RewardConfig.Default;
             // Goal hidden -> distance gradient suppressed; only the step cost remains (curiosity + the
             // sparse bonus must drive search). prev>curr so a leaked gradient would show as positive.
-            float r = RewardCalculator.Step(10f, 8f, false, cfg, goalVisible: false, fellInPit: false);
+            float r = RewardCalculator.Step(10f, 8f, false, cfg, goalVisible: false, fellInPit: false, jumped: false);
             Assert.AreEqual(-cfg.stepPenalty, r, 1e-6f);
         }
 
@@ -36,7 +36,7 @@ namespace NavSim.Tests.EditMode
         public void Step_GoalBonus_OnReach()
         {
             var cfg = RewardConfig.Default;
-            float r = RewardCalculator.Step(2f, 0.5f, true, cfg, goalVisible: true, fellInPit: false);
+            float r = RewardCalculator.Step(2f, 0.5f, true, cfg, goalVisible: true, fellInPit: false, jumped: false);
             Assert.Greater(r, cfg.goalBonus - 0.1f);
         }
 
@@ -46,7 +46,7 @@ namespace NavSim.Tests.EditMode
             var cfg = RewardConfig.Default;
             // Goal HIDDEN so shaping is gated off; prev==curr isolates the bonus. Fails iff the reach
             // bonus is ever moved inside the visibility gate.
-            float r = RewardCalculator.Step(5f, 5f, true, cfg, goalVisible: false, fellInPit: false);
+            float r = RewardCalculator.Step(5f, 5f, true, cfg, goalVisible: false, fellInPit: false, jumped: false);
             Assert.AreEqual(cfg.goalBonus - cfg.stepPenalty, r, 1e-6f); // 1.0 - 0.001
         }
 
@@ -54,8 +54,8 @@ namespace NavSim.Tests.EditMode
         public void Step_PitPenalty_Subtracted()
         {
             var cfg = RewardConfig.Default;
-            float clean = RewardCalculator.Step(10f, 10f, false, cfg, goalVisible: false, fellInPit: false);
-            float fell = RewardCalculator.Step(10f, 10f, false, cfg, goalVisible: false, fellInPit: true);
+            float clean = RewardCalculator.Step(10f, 10f, false, cfg, goalVisible: false, fellInPit: false, jumped: false);
+            float fell = RewardCalculator.Step(10f, 10f, false, cfg, goalVisible: false, fellInPit: true, jumped: false);
             Assert.AreEqual(clean - cfg.pitPenalty, fell, 1e-6f);
         }
 
@@ -64,8 +64,8 @@ namespace NavSim.Tests.EditMode
         {
             var cfg = RewardConfig.Default;
             // Pit cost fires whether or not the goal is visible (it is a hazard, never gated).
-            float visibleFell = RewardCalculator.Step(10f, 10f, false, cfg, goalVisible: true, fellInPit: true);
-            float visibleClean = RewardCalculator.Step(10f, 10f, false, cfg, goalVisible: true, fellInPit: false);
+            float visibleFell = RewardCalculator.Step(10f, 10f, false, cfg, goalVisible: true, fellInPit: true, jumped: false);
+            float visibleClean = RewardCalculator.Step(10f, 10f, false, cfg, goalVisible: true, fellInPit: false, jumped: false);
             Assert.AreEqual(visibleClean - cfg.pitPenalty, visibleFell, 1e-6f);
         }
 
@@ -75,7 +75,7 @@ namespace NavSim.Tests.EditMode
             var cfg = RewardConfig.Default;
             // Even a would-be-positive gradient (prev>curr) while visible must earn NO shaping during a fall:
             // the falling position is garbage and the -pitPenalty is the sole intended signal (no double-dip).
-            float r = RewardCalculator.Step(10f, 6f, false, cfg, goalVisible: true, fellInPit: true);
+            float r = RewardCalculator.Step(10f, 6f, false, cfg, goalVisible: true, fellInPit: true, jumped: false);
             Assert.AreEqual(-cfg.stepPenalty - cfg.pitPenalty, r, 1e-6f);
         }
 
@@ -131,7 +131,7 @@ namespace NavSim.Tests.EditMode
             var cfg = RewardConfig.Default;
             float representativeProgress = 0.3f;
             float step = RewardCalculator.Step(
-                10f, 10f - representativeProgress, false, cfg, goalVisible: true, fellInPit: false);
+                10f, 10f - representativeProgress, false, cfg, goalVisible: true, fellInPit: false, jumped: false);
             float crowd = RewardCalculator.CrowdPenalty(
                 new System.Collections.Generic.List<float> { 1.8f, 2.0f }, cfg); // 2 congestion-range neighbors
             Assert.Greater(step - crowd, 0f);
@@ -141,6 +141,40 @@ namespace NavSim.Tests.EditMode
         public void Default_HasDecoyPenalty()
         {
             Assert.AreEqual(0.25f, RewardConfig.Default.decoyPenalty, 1e-6f);
+        }
+
+        // --- Showcase: flat jumpPenalty (pure reward layer, shaping gate untouched) ---
+
+        [Test]
+        public void Step_JumpPenalty_ChargedFlat_OnJump()
+        {
+            var cfg = RewardConfig.Default; // jumpPenalty 0.02
+            float noJump = RewardCalculator.Step(10f, 8f, false, cfg, goalVisible: true, fellInPit: false, jumped: false);
+            float jump = RewardCalculator.Step(10f, 8f, false, cfg, goalVisible: true, fellInPit: false, jumped: true);
+            Assert.AreEqual(noJump - cfg.jumpPenalty, jump, 1e-6f); // flat subtraction, nothing else changes
+        }
+
+        [Test]
+        public void Step_JumpPenalty_DoesNotTouchShaping_WhenGoalHidden()
+        {
+            var cfg = RewardConfig.Default;
+            float r = RewardCalculator.Step(10f, 8f, false, cfg, goalVisible: false, fellInPit: false, jumped: true);
+            Assert.AreEqual(-cfg.stepPenalty - cfg.jumpPenalty, r, 1e-6f); // no shaping leak, penalty still flat
+        }
+
+        [Test]
+        public void Step_JumpPenalty_StacksWith_GoalBonus()
+        {
+            var cfg = RewardConfig.Default;
+            float r = RewardCalculator.Step(2f, 0.5f, true, cfg, goalVisible: true, fellInPit: false, jumped: true);
+            float rNoJump = RewardCalculator.Step(2f, 0.5f, true, cfg, goalVisible: true, fellInPit: false, jumped: false);
+            Assert.AreEqual(rNoJump - cfg.jumpPenalty, r, 1e-6f);
+        }
+
+        [Test]
+        public void Default_HasJumpPenalty()
+        {
+            Assert.AreEqual(0.02f, RewardConfig.Default.jumpPenalty, 1e-6f);
         }
     }
 }
