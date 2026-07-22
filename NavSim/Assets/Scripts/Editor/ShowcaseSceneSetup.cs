@@ -22,7 +22,9 @@ public static class ShowcaseSceneSetup
 {
     private const string BaseScene     = "Assets/Scenes/Training_pixel.unity";
     private const string ShowcaseScene = "Assets/Scenes/Training_showcase.unity";
-    private const float  JumpPenalty   = 0.02f;   // flat per-jump cost (RewardConfig.Default), the trap value
+    private const float  JumpPenalty   = 0.05f;   // flat per-jump cost; 0.02 -> 0.05 = the pre-registered reserve
+                                                  // lever (ext2): ext1 shipped 2.4-3.9 POINTLESS flat-ground hops/ep
+                                                  // (rollout-watch classified) - sharpen flat-vs-gap differentiation.
     private const int    MinMaxStep    = 3000;    // per-episode cap: one course traversal must fit
     private const float  StepOffset    = 0.45f;   // CC step-up: mounts the course 0.3 curb + 0.4 pad, < the 0.5 rails (P0)
 
