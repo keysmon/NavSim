@@ -54,7 +54,7 @@ public static class ShowcaseEvalBatch
     // -> stages 0,1,2,4: 2 mirror x 25 = 50 each; stage 3: 2 mirror x 2 variant x 25 = 100. Total 300 episodes.
     private static readonly int[] Stages = { 0, 1, 2, 3, 4 };
 
-    private enum Mode { Grid, Selftest, AB, Debug }
+    private enum Mode { Grid, Selftest, AB, Debug, RolloutWatch }
     private enum Outcome { None, Success, Decoy }
 
     private static Mode _mode;
@@ -75,6 +75,7 @@ public static class ShowcaseEvalBatch
     public static void Selftest() { _mode = Mode.Selftest; Begin(bakeModel: false); }
     public static void RunAB()    { _mode = Mode.AB;       Begin(bakeModel: true); }
     public static void RunDebug() { _mode = Mode.Debug;    Begin(bakeModel: true); }
+    public static void RunRolloutWatch() { _mode = Mode.RolloutWatch; Begin(bakeModel: true); }
 
     private static void Begin(bool bakeModel)
     {
@@ -127,6 +128,7 @@ public static class ShowcaseEvalBatch
                     case Mode.Selftest: code = RunSelftest(env, agent); break;
                     case Mode.AB: code = RunABImpl(env, agent); break;
                     case Mode.Debug: code = RunDebugImpl(env, agent); break;
+                    case Mode.RolloutWatch: code = RunRolloutWatchImpl(env, agent); break;
                     default: code = RunGrid(env, agent); break;
                 }
         }
@@ -375,6 +377,68 @@ public static class ShowcaseEvalBatch
 
     private static string Fmt3(Vector3 v) =>
         string.Format(CultureInfo.InvariantCulture, "({0:F1},{1:F1},{2:F1})", v.x, v.y, v.z);
+
+    // ================= ROLLOUT-WATCH (T9 step 4: quantified jump-purposefulness acceptance probe) =================
+
+    // Reusable acceptance probe (run per extension for an apples-to-apples hop-jankiness delta). Forces stages 1, 2,
+    // 3-NoLoop x 10 episodes each (stochastic, reset, baked model), logs EVERY jump event with position + stage, and
+    // classifies it: PURPOSEFUL = launched within 3.5u (Z) of the stage's GapZMin..GapZMax span (only stage 3 has a
+    // gap); every other jump (flat deck/ramp/start floor, and ALL jumps on the gap-less stages 1/2) = POINTLESS.
+    // Reports per stage: pointless-jumps/ep, purposeful-jumps/ep, success, mean steps, 3 sample pointless positions.
+    private static int RunRolloutWatchImpl(NavEnvironment env, NavAgent agent)
+    {
+        SetupHarnessCommon(env, agent);
+        const int eps = 10;
+        const float purposefulMargin = 3.5f;
+        var cells = new[] { 1, 2, 3 };   // stage 3 forced NoLoop below (the mandatory-jump gap)
+        foreach (int stage in cells)
+        {
+            CourseVariant variant = CourseVariant.NoLoop;
+            int pointlessTotal = 0, purposefulTotal = 0, successes = 0, stepsTotal = 0;
+            var pointlessSamples = new List<string>();
+            for (int ep = 0; ep < eps; ep++)
+            {
+                bool mir = ep >= 5;   // 5 unmirrored + 5 mirrored
+                int seed = SeedFor(stage, mir, variant, ep);
+                var (t0, d0) = SetupEpisode(env, agent, stage, mir, variant, seed, resetMemory: true);
+                CourseLayout lay = env.Course.CurrentLayout;
+                float gapMin = lay.GapZMin, gapMax = lay.GapZMax;
+                int jumpPrev = agent.JumpUses, jump0 = agent.JumpUses;
+                string outcome = "timeout";
+                int steps = MaxSteps;
+                for (int s = 0; s < MaxSteps; s++)
+                {
+                    Step();
+                    int ju = agent.JumpUses;
+                    if (ju > jumpPrev)
+                    {
+                        Vector3 pos = agent.transform.position;
+                        bool purposeful = stage == 3 && pos.z >= gapMin - purposefulMargin && pos.z <= gapMax + purposefulMargin;
+                        int launched = ju - jumpPrev;
+                        if (purposeful) purposefulTotal += launched;
+                        else { pointlessTotal += launched; if (pointlessSamples.Count < 12) pointlessSamples.Add(Fmt3(pos)); }
+                        Debug.Log($"[RW-JUMP] stage={stage} mir={mir} ep={ep} step={s} pos={Fmt3(pos)} z={pos.z:F1} " +
+                                  $"gap=[{gapMin:F1},{gapMax:F1}] class={(purposeful ? "PURPOSEFUL" : "POINTLESS")}");
+                        jumpPrev = ju;
+                    }
+                    Outcome o = Resolve(env, agent.transform.position, t0, d0);
+                    if (o == Outcome.Decoy) { outcome = "decoy"; steps = s + 1; break; }
+                    if (o == Outcome.Success) { outcome = "success"; steps = s + 1; break; }
+                }
+                if (outcome == "success") successes++;
+                stepsTotal += steps;
+                Debug.Log($"[RW-EP] stage={stage} mir={mir} ep={ep} outcome={outcome} steps={steps} jumps={agent.JumpUses - jump0}");
+            }
+            var sb = new StringBuilder();
+            sb.AppendLine($"[RW] ===== STAGE {stage} ({CourseSpec.StageNames[stage]}, {variant}) — {eps} eps =====");
+            sb.AppendLine($"  success={successes}/{eps}  meanSteps={stepsTotal / (float)eps:F0}");
+            sb.AppendLine($"  pointless-jumps/ep = {pointlessTotal / (float)eps:F2}   purposeful-jumps/ep = {purposefulTotal / (float)eps:F2}");
+            int nSamp = Mathf.Min(3, pointlessSamples.Count);
+            for (int i = 0; i < nSamp; i++) sb.AppendLine($"  pointless sample {i + 1}: {pointlessSamples[i]}");
+            Debug.Log(sb.ToString());
+        }
+        return 0;
+    }
 
     // ================= A/B (LSTM carryover on the representative cell) =================
 
