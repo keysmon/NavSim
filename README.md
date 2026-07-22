@@ -8,9 +8,9 @@ The arc runs from a 2D foundation (M0-M4: crowds, curricula, hidden-goal search)
 **Live demo:** https://navsim-webgl.vercel.app - the Showcase: a trained pixel policy runs a curated five-stage challenge course ("Open room / The ramp / The wall / The gap / The gauntlet") live in your browser.
 Watch its actual 84x84 CNN input in the corner inset (the border flashes red the moment it truly sees the target), read the live behavior captions, re-roll mirrored layouts, and switch stages.
 
-![Capstone stage](docs/capstone/capstone.png)
+![The live showcase demo: the trained pixel policy runs "The gauntlet" with its real CNN input in the corner inset](docs/showcase/showcase.gif)
 
-*The capstone final stage: a legible critical path - tan tread ramp up to a raised ledge, a slate occluding wall, a risk/reward pit gap, and the red-target-among-decoys reveal - hand-authored to showcase the M6 visual object-goal search task on deliberately-composed terrain.*
+*One real gauntlet solve by the deployed policy (10.9s, unedited): up the ramp, through the S-bend, over the gap, to the red goal - the corner inset is the agent's actual 84x84 CNN input, and its border turns red the moment the target enters the agent's view.*
 
 ## Pipeline
 
@@ -54,9 +54,9 @@ Each row is one question and its honest answer.
   A genuine negative, reported without spin.
   [`docs/M7-results.md`](docs/M7-results.md).
 
-- **Capstone - the final stage (shown above).**
+- **Capstone - the composed stage.**
   A curated, deliberately-composed challenge course with a single legible critical path - ramp -> raised ledge -> occluding wall -> risk/reward pit gap -> the red-target-among-decoys reveal - demonstrating the visual-search task on hand-authored terrain.
-  Built by `NavSim/Assets/Scripts/Editor/CapstoneSceneSetup.cs` (`Assets/Scenes/Capstone.unity`).
+  Built by `NavSim/Assets/Scripts/Editor/CapstoneSceneSetup.cs` (`Assets/Scenes/Capstone.unity`); hero render at [`docs/capstone/capstone.png`](docs/capstone/capstone.png).
 
 - **Showcase - the playable capstone (the live demo).**
   The capstone made real: a pixel policy (84x84 egocentric RGB, from-scratch `nature_cnn` + LSTM) trained from scratch on a playable five-stage version of the course, with a flat per-jump penalty so jumping is a learned *choice*, not a tic.
