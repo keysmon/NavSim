@@ -26,5 +26,15 @@ namespace NavSim.Runtime
             float[] b = Build(agentVelocity, headingDeg, maxSpeed, grounded, jumpReady);
             return new[] { b[0], b[1], b[2], b[3], b[4], doorOpen ? 1f : 0f };
         }
+
+        // M8 ramp obs: the 5-float proprioception + a shared rampAtTarget indicator (shared world-state,
+        // identical across both agents, so it removes the partial-observability confound of an agent that
+        // can no longer see the ramp; it is NOT a lever). Returns [Build[0..4], rampAtTarget01], length 6.
+        public static float[] BuildRamp(Vector3 agentVelocity, float headingDeg, float maxSpeed,
+            bool grounded, bool jumpReady, bool rampAtTarget)
+        {
+            float[] b = Build(agentVelocity, headingDeg, maxSpeed, grounded, jumpReady);
+            return new[] { b[0], b[1], b[2], b[3], b[4], rampAtTarget ? 1f : 0f };
+        }
     }
 }

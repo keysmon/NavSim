@@ -72,5 +72,19 @@ namespace NavSim.Tests.EditMode
             var b = ObservationBuilder.BuildCoop(v, 45f, 4f, false, true, true);
             for (int i = 0; i < 5; i++) Assert.AreEqual(a[i], b[i], 1e-6f, $"index {i}");
         }
+
+        [Test]
+        public void BuildRamp_Is6Floats_LastIsRampFlag()
+        {
+            float[] o = ObservationBuilder.BuildRamp(new Vector3(1f, 0f, 0f), 0f, 4f, true, true, true);
+            Assert.AreEqual(6, o.Length);
+            Assert.AreEqual(1f, o[5], 1e-6f);           // rampAtTarget = true -> 1
+
+            float[] o2 = ObservationBuilder.BuildRamp(new Vector3(1f, 0f, 0f), 0f, 4f, true, true, false);
+            Assert.AreEqual(0f, o2[5], 1e-6f);          // rampAtTarget = false -> 0
+            // first 5 match Build (proprioception unchanged)
+            float[] baseObs = ObservationBuilder.Build(new Vector3(1f, 0f, 0f), 0f, 4f, true, true);
+            for (int i = 0; i < 5; i++) Assert.AreEqual(baseObs[i], o2[i], 1e-6f);
+        }
     }
 }
