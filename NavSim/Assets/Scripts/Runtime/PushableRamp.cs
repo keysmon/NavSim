@@ -24,9 +24,9 @@ namespace NavSim.Runtime
         public static bool Overcomes(float appliedForce, float mass, float staticFrictionCoeff, float gravity)
             => appliedForce > RequiredBreakForce(mass, staticFrictionCoeff, gravity);
 
-        public static float NetForce(float appliedForce, float mass, float frictionCoeff, float gravity)
-            => Overcomes(appliedForce, mass, frictionCoeff, gravity)
-                ? appliedForce - frictionCoeff * mass * Mathf.Abs(gravity)
+        public static float NetForce(float appliedForce, float mass, float staticFrictionCoeff, float gravity)
+            => Overcomes(appliedForce, mass, staticFrictionCoeff, gravity)
+                ? appliedForce - RequiredBreakForce(mass, staticFrictionCoeff, gravity)
                 : 0f;
     }
 }
