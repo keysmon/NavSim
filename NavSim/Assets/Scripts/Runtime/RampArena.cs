@@ -135,11 +135,13 @@ namespace NavSim.Runtime
                 Success = true;
                 LastScorerIndex = scorer;
                 JointPushFrac = _rampMoveSteps > 0 ? (float)_jointPushSteps / _rampMoveSteps : 0f;
-                if (_lesson == 0) _s0Successes++;
-                else if (_lesson == 1) _s1Successes++;
-                else if (_lesson == 2) _s2Successes++;
                 if (!EvalMode)
                 {
+                    // Competence counters drive the TRAINING curriculum only (eval uses the hard branch);
+                    // never advance them under EvalMode (M7 idiom - avoids a train/eval instance-reuse footgun).
+                    if (_lesson == 0) _s0Successes++;
+                    else if (_lesson == 1) _s1Successes++;
+                    else if (_lesson == 2) _s2Successes++;
                     ApplySplit(ArmRouting.Outcome(_armMode), scorer);
                     EndEpisodePerArm();
                     ResetEpisode();
