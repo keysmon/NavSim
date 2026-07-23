@@ -154,8 +154,8 @@ namespace NavSim.Runtime
         }
 
         // Seeded fresh layout + latch reset. Heaviness by lesson via the ramp MASS; ramp reset to a start
-        // position (competence-ramped distance for S0/S3); agents spawned mirrored in the near chamber
-        // (sides randomly swapped) with per-agent +-0.5u jitter, guarded for 1 or 2 agents.
+        // position (competence-ramped distance for S0/S3); agents spawned BESIDE the ramp on the -x side of
+        // its vertical -x face, facing +x (the lateral-push mechanic), guarded for 1 or 2 agents.
         public void ResetEpisode()
         {
             StepsThisEpisode = 0;
@@ -185,14 +185,20 @@ namespace NavSim.Runtime
             ramp.ResetTo(startPos, Quaternion.identity);
             _prevRampToTarget = Vector3.Distance(startPos, rampTarget.position);
 
-            // Spawns (M7 block, guarded for 1 or 2 agents).
-            float spawnZ = Lerp(-9f, -6f, NextFloat());
-            int flip = NextFloat() < 0.5f ? -1 : 1;
+            // Spawns (LATERAL-push mechanic - verify-early #1 geometry). Agents stand BESIDE the ramp on the
+            // -x side of its tall vertical -x face, facing +x, so driving forward shoves the ramp toward
+            // rampTarget. The ramp's -x face sits at startPos.x - WedgeHalfWidth (2u); agents are placed
+            // AgentBehindOffset (=2u + ~1.2u clearance = 3.2u) further -x, matching the selftest's verified
+            // behindX, and keyed off the ACTUAL startPos so they stay beside the face wherever it drifts
+            // (S0 near->far) - never on the +z climb slope. Two agents are offset +-0.8u in z so both press
+            // the tall face. Seeded jitter is small (a wide spread here would miss the face and flatline the
+            // push). yaw 90deg = forward +x (into the push).
+            float behindX = startPos.x - AgentBehindOffset;
             for (int i = 0; i < agents.Length; i++)
             {
-                float side = (agents.Length == 1 ? 0f : (i == 0 ? -1f : 1f) * flip);
-                Vector3 p = new Vector3(side * 2.5f + Jitter(), 0.5f, spawnZ + Jitter());
-                agents[i].TeleportTo(p, (float)(_layoutRng.NextDouble() * 360.0));
+                float zOff = agents.Length == 1 ? 0f : (i == 0 ? -0.8f : 0.8f);
+                Vector3 p = new Vector3(behindX + Jitter(), 0.5f, startPos.z + zOff + Jitter());
+                agents[i].TeleportTo(p, 90f + YawJitter());
             }
 
             Physics.SyncTransforms();
@@ -200,11 +206,18 @@ namespace NavSim.Runtime
 
         // ---- internals ----
 
-        // Ramp start endpoints (fixed arena positions; rampStart wires the near reset when present in-scene).
-        // Near ~ just short of the ramp target (rampTarget ~z=4 at the ledge base): a short push for S0.
-        // Far  ~ a corner within the +-arenaHalf arena: the long push for the S3 stretch.
+        // Ramp start endpoints (lateral-push layout; rampStart wires the near reset when present in-scene).
+        // Near = rampStart (~(-5,1.24,2)): a 5m +x push for S0. Far = the SAME z-line and height, further -x
+        // for a longer +x push (S3 stretch / S0 late). Far x is bounded (-6.5) so an agent spawned
+        // AgentBehindOffset (3.2u) behind the ramp - plus its radius and jitter - stays inside the -x wall
+        // (arenaHalf 11). The pre-lateral Far ((-(arenaHalf-3),0.5,-(arenaHalf-3))) was the old +z/embedded
+        // layout - unreachable-vertical and off the push axis (verify-early #1 follow-up #2, fixed here).
         private Vector3 NearRampStart() => rampStart != null ? rampStart.position : new Vector3(0f, 0.5f, 1.5f);
-        private Vector3 FarRampStart() => new Vector3(-(arenaHalf - 3f), 0.5f, -(arenaHalf - 3f));
+        private Vector3 FarRampStart()
+        {
+            Vector3 near = NearRampStart();
+            return new Vector3(-6.5f, near.y, near.z);
+        }
 
         // The ONLY reward surface: an ArmRouting split. scorer/partner -> per-agent AddReward; group ->
         // the multi-agent group (Poca only; PPO splits carry group=0 so PPO arms never touch the group).
@@ -265,8 +278,13 @@ namespace NavSim.Runtime
             ArmMode = DecodeArm(Academy.Instance.EnvironmentParameters.GetWithDefault("arm_mode", 2f));
         }
 
+        // Lateral-push spawn geometry: agents sit AgentBehindOffset on the -x side of the ramp center, so their
+        // front edge is just short of the ramp's -x face (WedgeHalfWidth 2u + ~1.2u clearance) and driving +x
+        // contacts it (verify-early #1). Jitter is small so the tight push geometry survives the randomness.
+        private const float AgentBehindOffset = 3.2f;
         private float NextFloat() => (float)_layoutRng.NextDouble();
-        private float Jitter() => Lerp(-0.5f, 0.5f, NextFloat());
+        private float Jitter() => Lerp(-0.3f, 0.3f, NextFloat());      // small position jitter (+-0.3u)
+        private float YawJitter() => Lerp(-10f, 10f, NextFloat());     // small facing jitter (+-10deg, stays ~+x)
         private static float Lerp(float a, float b, float t) => a + (b - a) * t;
     }
 }

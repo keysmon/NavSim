@@ -62,6 +62,80 @@ public static class M8RampPhysicsSelftest
         EditorApplication.Exit(code);
     }
 
+    // --- Spawn sanity (Probe-A prep) -----------------------------------------------------------------------
+    // Drives the ARENA's ResetEpisode (NOT manual teleports) and asserts each agent lands BESIDE the ramp's
+    // -x vertical face (on the -x side, within ~1.5u), facing ~+x - so driving forward contacts the pushable
+    // face. De-risks a spurious flatline where a mis-placed agent never touches the ramp. Scene via env
+    // M8_SPAWN_SCENE (default the SOLO scene, which Probe A trains on).
+    //   Unity -batchmode -projectPath NavSim -executeMethod M8RampPhysicsSelftest.SpawnCheck -logFile <log>
+    public static void SpawnCheck()
+    {
+        string scene = Environment.GetEnvironmentVariable("M8_SPAWN_SCENE");
+        if (string.IsNullOrEmpty(scene)) scene = "Assets/Scenes/Ramp_solo.unity";
+        EditorSceneManager.OpenScene(scene, OpenSceneMode.Single);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions =
+            EnterPlayModeOptions.DisableDomainReload | EnterPlayModeOptions.DisableSceneReload;
+        _frames = 0;
+        EditorApplication.update += SpawnTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    private static void SpawnTick()
+    {
+        if (!EditorApplication.isPlaying) return;
+        _frames++;
+        if (_frames < 30) return;
+        EditorApplication.update -= SpawnTick;
+        int code = 1;
+        try { code = RunSpawnCheck(); }
+        catch (Exception e) { Debug.LogError("[M8Spawn] FAILED: " + e); code = 1; }
+        EditorApplication.Exit(code);
+    }
+
+    private static int RunSpawnCheck()
+    {
+        var arena = UnityEngine.Object.FindAnyObjectByType<RampArena>();
+        if (arena == null) { Debug.LogError("[M8Spawn] no RampArena in scene"); return 1; }
+        var agents = arena.Agents;
+        var ramp = arena.Ramp;
+        if (agents == null || agents.Length < 1 || ramp == null)
+        { Debug.LogError($"[M8Spawn] scene needs >=1 agent + ramp (agents={agents?.Length}, ramp={ramp})"); return 1; }
+        var rampCol = ramp.GetComponentInChildren<Collider>();
+        if (rampCol == null) { Debug.LogError("[M8Spawn] ramp has no collider"); return 1; }
+
+        // Training-mode spawn (EvalMode=false, S0, 0 successes -> ramp at the NEAR start = Probe A's episode 1).
+        arena.EvalMode = false;
+        const float maxFaceDist = 1.6f;   // "within ~1.5u of the -x face" (+ small jitter margin)
+        const float minFaceGap = 0.3f;    // agent front edge must not start embedded in the face
+        const float minForwardX = 0.9f;   // facing ~+x (within ~26deg of +x)
+        const int resets = 5;
+        bool allPass = true;
+        for (int r = 0; r < resets; r++)
+        {
+            arena.ResetEpisode();
+            Physics.SyncTransforms();
+            float faceX = rampCol.bounds.min.x;   // ramp's -x vertical face (x-extent unaffected by the X-tilt)
+            for (int i = 0; i < agents.Length; i++)
+            {
+                Vector3 p = agents[i].transform.position;
+                Vector3 fwd = agents[i].transform.forward;
+                float faceDist = faceX - p.x;      // >0 => agent is on the -x side of the face
+                bool onMinusX = p.x < faceX;
+                bool near = faceDist > minFaceGap && faceDist <= maxFaceDist;
+                bool facingX = fwd.x > minForwardX;
+                bool ok = onMinusX && near && facingX;
+                allPass &= ok;
+                Debug.Log($"[M8Spawn] reset {r} agent{i} pos={V(p)} yaw={agents[i].transform.eulerAngles.y:F1} " +
+                          $"fwd.x={fwd.x:F3} rampX={ramp.Position.x:F2} faceX={faceX:F2} faceDist={faceDist:F2} " +
+                          $"onMinusX={onMinusX} near={near} facing+x={facingX} -> {(ok ? "OK" : "FAIL")}");
+            }
+        }
+        Debug.Log($"[M8Spawn] SPAWN SANITY {(allPass ? "PASS" : "FAIL")} scene-agents={agents.Length} " +
+                  $"(each agent must spawn on the -x side within {maxFaceDist}u of the ramp's -x face, facing +x)");
+        return allPass ? 0 : 1;
+    }
+
     private struct Result
     {
         public bool placed; public int steps; public float startDist, finalDist, minDist;
