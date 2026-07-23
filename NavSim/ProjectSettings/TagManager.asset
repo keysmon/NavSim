@@ -19,6 +19,7 @@ TagManager:
   - mover
   - door
   - plate
+  - ramp
   layers:
   - Default
   - TransparentFX
