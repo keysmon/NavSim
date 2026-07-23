@@ -174,11 +174,12 @@ namespace NavSim.Runtime
             };
             ramp.Mass = mass;
 
-            // Ramp start: S0 near the target (short push); later lessons/S3 farther (competence-ramped for S3).
+            // Ramp start distance (Near->Far lerp): S0 and S3 competence-ramp near(naive)->far(competent) via
+            // startRamp so a naive agent gets the SHORT push (bootstrap); S1/S2 stay near. EvalMode = far (hard end).
             float startRamp = _lesson >= 3
                 ? (EvalMode ? 1f : Competence.Ramp01(_s2Successes, s2RampSuccesses))
                 : (_lesson == 0 ? (EvalMode ? 1f : Competence.Ramp01(_s0Successes, Mathf.Max(1, s2RampSuccesses))) : 1f);
-            Vector3 startPos = Vector3.Lerp(NearRampStart(), FarRampStart(), _lesson == 0 ? (1f - startRamp) : (_lesson >= 3 ? startRamp : 0f));
+            Vector3 startPos = Vector3.Lerp(NearRampStart(), FarRampStart(), (_lesson == 0 || _lesson >= 3) ? startRamp : 0f);
             ramp.ResetTo(startPos, Quaternion.identity);
             _prevRampToTarget = Vector3.Distance(startPos, rampTarget.position);
 
@@ -208,20 +209,20 @@ namespace NavSim.Runtime
         private void ApplySplit(ArmRouting.Split s, int scorerIdx)
         {
             if (s.scorer != 0f) agents[scorerIdx].AddReward(s.scorer);
-            if (s.partner != 0f) agents[1 - scorerIdx].AddReward(s.partner);
+            if (s.partner != 0f && agents.Length > 1) agents[1 - scorerIdx].AddReward(s.partner); // no partner in solo (confound detector)
             if (s.group != 0f && _group != null) _group.AddGroupReward(s.group);
         }
 
         private void EndEpisodePerArm()
         {
             if (_armMode == ArmRouting.Arm.Poca && _group != null) _group.EndGroupEpisode();
-            else { agents[0].EndEpisode(); agents[1].EndEpisode(); }
+            else for (int i = 0; i < agents.Length; i++) agents[i].EndEpisode(); // 1 (solo) or 2 agents
         }
 
         private void InterruptEpisode()
         {
             if (_armMode == ArmRouting.Arm.Poca && _group != null) _group.GroupEpisodeInterrupted();
-            else { agents[0].EpisodeInterrupted(); agents[1].EpisodeInterrupted(); }
+            else for (int i = 0; i < agents.Length; i++) agents[i].EpisodeInterrupted(); // 1 (solo) or 2 agents
         }
 
         // Group created ONCE; agents registered ONLY while ArmMode == Poca (re-registration guard: an
