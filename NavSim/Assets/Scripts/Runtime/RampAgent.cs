@@ -27,6 +27,12 @@ namespace NavSim.Runtime
         private CharacterController _cc;
         private float _vY; // integrated vertical velocity (LocomotionMath)
 
+        // Verify-early #1 diagnostics: raw ramp contacts (BEFORE the |n.y|/into-face skip) and the last skipped
+        // contact normal, so the selftest can distinguish "never touched the ramp" from "touched but skipped".
+        public int DebugRawRampContacts { get; private set; }
+        public int DebugSkippedContacts { get; private set; }
+        public Vector3 DebugLastRampNormal { get; private set; }
+
         public bool Grounded => _cc != null && _cc.isGrounded;
 
         public override void Initialize() => _cc = GetComponent<CharacterController>();
@@ -82,21 +88,36 @@ namespace NavSim.Runtime
         {
             var ramp = hit.collider.GetComponentInParent<PushableRampBody>();
             if (ramp == null) return;
+            DebugRawRampContacts++;                 // raw contact with the ramp (verify-early #1 diagnostic)
+            DebugLastRampNormal = hit.normal;
 
             // Only push on ~horizontal (side) contacts, so climbing the placed sloped face - whose contact
             // normal has a large vertical component - does not shove the ramp away.
             Vector3 n = hit.normal;
-            if (Mathf.Abs(n.y) > 0.5f) return;
+            if (Mathf.Abs(n.y) > 0.5f) { DebugSkippedContacts++; return; }
 
             Vector3 dir = transform.forward; dir.y = 0f;
-            if (dir.sqrMagnitude < 1e-6f) return;
+            if (dir.sqrMagnitude < 1e-6f) { DebugSkippedContacts++; return; }
             dir.Normalize();
 
             // Require driving INTO the ramp (push opposes the horizontal contact normal).
             n.y = 0f;
-            if (n.sqrMagnitude < 1e-6f || Vector3.Dot(dir, -n.normalized) <= 0f) return;
+            if (n.sqrMagnitude < 1e-6f || Vector3.Dot(dir, -n.normalized) <= 0f) { DebugSkippedContacts++; return; }
 
             ramp.ApplyPush(agentIndex, dir * pushForceNewtons, hit.point);
+        }
+
+        // TEST-ONLY (verify-early #1): apply EXACTLY OnActionReceived's locomotion for full-forward input,
+        // INCLUDING gravity (_vY via LocomotionMath) so the pusher stays GROUNDED and keeps shoving the ramp's
+        // vertical face instead of floating up and over the slope. Drives `_cc.Move -> OnControllerColliderHit
+        // -> ApplyPush` under the manual eval seam WITHOUT a trained model - tests the PUSH mechanic, not policy.
+        public void DebugDriveForward(float dt)
+        {
+            if (_cc == null) _cc = GetComponent<CharacterController>();
+            bool grounded = _cc.isGrounded;
+            _vY = LocomotionMath.NextVerticalVelocity(_vY, grounded, false, jumpImpulse, gravity, dt, terminalVelocity);
+            Vector3 horiz = transform.forward * maxSpeed;
+            _cc.Move(new Vector3(horiz.x, _vY, horiz.z) * dt);
         }
 
         // Teleport helper: a CharacterController caches its position and fights direct transform writes;

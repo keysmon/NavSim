@@ -29,17 +29,17 @@ using NavSim.Runtime;
 // non-null, ramp = dynamic Rigidbody + PushableRampBody + non-null material, platform-top > jump apex) -
 // hard-exit non-zero on any failure, Exit(0) on save.
 //
-// GEOMETRY/PHYSICS TENSION (hand-off note for verify-early #1, which OWNS the real push/climb physics):
-// The push mechanic (RampAgent.OnControllerColliderHit) only shoves the ramp on ~vertical contacts
-// (|contactNormal.y| <= 0.5), and the top face must stay walkable AND reach the y=2.0 ledge. For a
-// rotated cube slab these pull in different directions:
-//   (a) pushable low-end face wants slope <= ~30deg (sin30 = 0.5, at the push-skip boundary),
-//   (b) rise = length*sin(angle) = 2.0m at 30deg wants length ~4m,
-//   (c) a 4m slab rests with its center ~1.7m short of RampTarget(z=4) when its high edge meets the
-//       platform face - just outside targetRadius (1.5) on RampArena.
-// None of these are exercised by the structural self-asserts below; they are physics to be tuned
-// empirically next (nudge RampTarget.z / targetRadius / mass / friction / the push rule). This builder
-// ships a coherent starting wedge (30deg, ~2.0m rise, low edge ~on the floor) and defers the tuning.
+// GEOMETRY/PHYSICS (resolved by verify-early #1 - the climb-vs-push tension is solved with SHAPE, not by
+// relaxing the push rule): the push mechanic (RampAgent.OnControllerColliderHit) only shoves the ramp on
+// ~vertical contacts (|contactNormal.y| <= 0.5). An up-slope ramp pushed from behind FAILS - the agent walks
+// up the climbable top slope (|n.y|~1) and never touches a pushable face (verify-early #1: 0 pushes). The
+// fix: LATERAL push. The slab tilts about the X axis, so its +-X end faces stay VERTICAL (|n.y|=0) and tall
+// (floor->top) while its +z top face stays the walkable slope. Agents shove the ramp along +x against its -x
+// vertical face (push rule fires cleanly) from BESIDE it - never on the climb slope - sliding it into the
+// platform-base target (x=0). The +z slope is then climbed onto the platform AFTER placement. Un-embed:
+// WedgeCenterY seats the lowest tilted corner ~on the floor (a corner below the floor jams under
+// FreezePositionY). "1 creeps / 2 place" is a TEMPORAL forcing tuned via mass/damping/friction over the
+// x-push distance (M8RampPhysicsSelftest measures it; final values baked into RampArena/PushableRampBody).
 //
 // Batchmode (NO -quit; the script calls EditorApplication.Exit itself):
 //   Unity -batchmode -projectPath NavSim -executeMethod M8RampSceneSetup.Build     -logFile -
@@ -59,13 +59,22 @@ public static class M8RampSceneSetup
     private static readonly Vector3 PlatformCenter = new Vector3(0f, 1.0f, 7f);
     private static readonly Vector3 PlatformSize = new Vector3(6f, 2.0f, 6f);
 
-    // Wedge ramp (rotated cube slab; see GEOMETRY/PHYSICS TENSION note above). At 30deg the rise
-    // = length*sin(30) = 2.0m; center_y 0.8 puts the low edge ~on the floor and the high edge ~y=2.0.
+    // Wedge ramp (rotated cube slab). The slab tilts about the X axis, so its +z end is HIGH (walkable slope
+    // faces the platform at +z) and - crucially for verify-early #1 - its +-X END FACES stay VERTICAL
+    // (rotation about X leaves the (+-1,0,0) face normals horizontal, |n.y|=0). Those tall vertical side faces
+    // are the PUSH surface: agents shove the ramp LATERALLY (+x) against its -x face (the existing |n.y|>0.5
+    // push rule fires cleanly; keeps the placed-ramp-nudge guard closed), sliding it into the platform-base
+    // target. The +z walkable slope stays free to climb onto the platform AFTER placement - push-face and
+    // climb-face are orthogonal and both reachable (this resolves the climb-vs-push tension via SHAPE, not by
+    // relaxing the rule). WedgeCenterY lifts the slab so its lowest corner rests ~ON the floor top (y=0), NOT
+    // embedded (a corner below the floor jams under FreezePositionY - verify-early #1 finding).
     private const float WedgeAngleDeg = 30f;   // slope of the walkable top face
-    private const float WedgeWidth = 4f;       // local x (pushable side width)
+    private const float WedgeWidth = 4f;       // local x (pushable side-face width)
     private const float WedgeThickness = 0.5f; // local y (slab thickness)
-    private const float WedgeLength = 4f;      // local z (run before rotation) -> rise ~2.0m at 30deg
-    private const float WedgeCenterY = 0.8f;   // low edge ~on the floor, high edge ~ledge top (y=2.0)
+    private const float WedgeLength = 4f;      // local z (run before rotation)
+    private const float WedgeCenterY = 1.24f;  // lowest tilted corner (-1.2165 offset) rests ~on floor top (y~0.02)
+    private const float RampStartX = -5f;      // ramp starts BESIDE the platform (-x); pushed +x to the target
+    private const float RampBridgeZ = 2.0f;    // ramp z: +z slope faces the platform; z-footprint [0.14,3.86] < 4 (clear)
 
     // Public batchmode entrypoints. Build/BuildSolo share the world builder (identical geometry, differing
     // only in agent count) so the two scenes stay in lock-step and the material GUID is created once.
@@ -105,19 +114,18 @@ public static class M8RampSceneSetup
             // The tilt lives on a CHILD slab (see MakeWedge): RampArena.ResetEpisode teleports the ramp BODY
             // to Quaternion.identity every reset (via PushableRampBody.ResetTo, NOT EvalMode-gated), which
             // would flatten a tilt baked on the body itself. The parent stays identity; the child stays tilted.
-            GameObject rampGo = MakeWedge("Ramp", new Vector3(0f, WedgeCenterY, 0f));   // identity parent
+            GameObject rampGo = MakeWedge("Ramp", new Vector3(RampStartX, WedgeCenterY, RampBridgeZ));  // identity parent, lateral-push start
             PushableRampBody rampBody = rampGo.AddComponent<PushableRampBody>();        // [RequireComponent] auto-adds the Rigidbody on the parent
             PhysicsMaterial slide = LoadOrCreateSlideMaterial();                        // stable-GUID load-or-create
             Collider rampCol = rampGo.GetComponentInChildren<Collider>();              // the tilted child slab's BoxCollider
             rampCol.sharedMaterial = slide;
 
-            // --- Marker transforms ---
+            // --- Marker transforms (lateral push: start beside the platform at -x, target aligned under the
+            // goal at x=0; SAME y and z so the ramp-to-target distance is purely the x the agents must shove). ---
             Transform target = new GameObject("RampTarget").transform;
-            target.position = new Vector3(0f, 0.02f, 4.0f);        // ledge base (platform front face is z=4)
+            target.position = new Vector3(0f, WedgeCenterY, RampBridgeZ);        // platform-base target (under the goal x)
             Transform start = new GameObject("RampStart").transform;
-            start.position = new Vector3(0f, WedgeCenterY, 0f);    // matches the wedge's floor-resting Y (0.8; the
-                                                                  // brief's 0.25 was a placeholder - tuned to seat
-                                                                  // the slab low edge on the floor & top at y=2.0)
+            start.position = new Vector3(RampStartX, WedgeCenterY, RampBridgeZ); // beside the platform, low corner ~on floor
 
             // --- Agents (1 solo, or 2 mirrored in the near chamber) ---
             var agents = new RampAgent[agentCount];
@@ -338,24 +346,37 @@ public static class M8RampSceneSetup
         f.EndVerticalOffset = endVerticalOffset;
     }
 
-    // Load-or-create the low-friction slide material so its GUID is STABLE across Build then BuildSolo
-    // (both run the shared world builder; a re-CreateAsset each time would churn the GUID and dangle
-    // Ramp.unity's material ref). Friction/combine are (re)applied every call so the values stay canonical.
+    // Load-or-create the low-friction slide material at 0.15/Minimum, and CONFIRM the values persist to disk.
+    // verify-early #1 found the old mutate-then-SaveAssets left the on-disk asset at the 0.6/Average DEFAULT
+    // (the field-set was not reaching disk). Fix: build the values into the constructor initializer BEFORE
+    // CreateAsset (serializes the correct state immediately), and DELETE+recreate only when the existing asset
+    // is missing or wrong - so a correct asset keeps its GUID stable across Build then BuildSolo, but a stale
+    // one is repaired. SaveAssetIfDirty + ForceUpdate import guarantee the flush.
+    private const float SlideFriction = 0.15f;   // lone agent can creep the heavy ramp; two place it in-budget
     private static PhysicsMaterial LoadOrCreateSlideMaterial()
     {
         if (!AssetDatabase.IsValidFolder(MaterialFolder))
             AssetDatabase.CreateFolder("Assets/Models", "M8");
         var mat = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(MaterialPath);
-        if (mat == null)
+        bool wrong = mat == null
+            || Mathf.Abs(mat.staticFriction - SlideFriction) > 1e-4f
+            || Mathf.Abs(mat.dynamicFriction - SlideFriction) > 1e-4f
+            || mat.frictionCombine != PhysicsMaterialCombine.Minimum;
+        if (wrong)
         {
-            mat = new PhysicsMaterial("RampSlide");
-            AssetDatabase.CreateAsset(mat, MaterialPath);
+            if (mat != null) AssetDatabase.DeleteAsset(MaterialPath);   // repair a stale/default asset
+            mat = new PhysicsMaterial("RampSlide")
+            {
+                staticFriction = SlideFriction,
+                dynamicFriction = SlideFriction,
+                frictionCombine = PhysicsMaterialCombine.Minimum,   // NOT Average - a lighter combine keeps the push feasible
+                bounciness = 0f
+            };
+            AssetDatabase.CreateAsset(mat, MaterialPath);              // serializes the correct fields immediately
+            EditorUtility.SetDirty(mat);
+            AssetDatabase.SaveAssetIfDirty(mat);
+            AssetDatabase.ImportAsset(MaterialPath, ImportAssetOptions.ForceUpdate);
         }
-        mat.staticFriction = 0.15f;
-        mat.dynamicFriction = 0.15f;
-        mat.frictionCombine = PhysicsMaterialCombine.Minimum;   // lone agent can creep the heavy ramp
-        EditorUtility.SetDirty(mat);
-        AssetDatabase.SaveAssets();
         return mat;
     }
 

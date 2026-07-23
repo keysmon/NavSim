@@ -16,7 +16,11 @@ namespace NavSim.Runtime
     public class PushableRampBody : MonoBehaviour
     {
         [SerializeField] private float mass = 2f;             // heaviness knob (arena sets it per lesson)
-        [SerializeField] private float linearDamping = 1.0f;  // resist motion so heavy needs two
+        // Viscous damping tuned by verify-early #1 (M8RampPhysicsSelftest) so the lateral push cleanly
+        // separates 1-vs-2 over the 5m push in the 3000-step budget: heavy(6kg) 1 agent covers only ~2.3m
+        // (fails), 2 agents place at ~2246 steps, light(2kg) 1 agent places at ~1500. Friction is ~0 under
+        // FreezePositionY (the ramp rides just above the floor), so damping is the separation lever.
+        [SerializeField] private float linearDamping = 23f;
 
         private Rigidbody _rb;
         private int _pusherMask;
@@ -28,6 +32,7 @@ namespace NavSim.Runtime
         }
         public Vector3 Position => _rb != null ? _rb.position : transform.position;
         public int PushersThisStep => CountBits(_pusherMask);
+        public int TotalPushEvents { get; private set; }   // cumulative ApplyPush calls (verify-early #1 push-fire diagnostic)
 
         private void Awake()
         {
@@ -45,6 +50,7 @@ namespace NavSim.Runtime
             if (_rb == null) _rb = GetComponent<Rigidbody>();
             _rb.AddForceAtPosition(force, point, ForceMode.Force);
             _pusherMask |= (1 << agentIndex);
+            TotalPushEvents++;
         }
 
         public void ClearPushers() => _pusherMask = 0;
