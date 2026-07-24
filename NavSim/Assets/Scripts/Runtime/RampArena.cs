@@ -41,9 +41,22 @@ namespace NavSim.Runtime
         [SerializeField] private float rampMassHeavy = 6f;    // one agent only creeps; two are needed in-budget
         [SerializeField] private int   s2RampSuccesses = 200; // competence horizon for the heaviness ramp
 
+        [Header("S0 push curriculum")]
+        // S0 begins just outside targetRadius: the agent must still push (never starts pre-placed), but only
+        // a short distance. Successes recede the ramp to the normal scene-authored start. Eval is always normal.
+        [SerializeField] private float s0InitialPushDistance = 1.75f;
+        [SerializeField] private int s0StartSuccesses = 200;
+
         [Header("Shaping")]
-        // ramp-to-target shaping (the shapeable signal M7 lacked; orthogonal to cooperation)
+        // ramp-to-target (PUSH) shaping: guides the ramp toward its target (the push stage).
         [SerializeField] private float shapingScale = 0.01f;
+        // GOAL (climb) shaping: the M5/M6 distance-bootstrap (RewardCalculator pattern) that M8's RampArena
+        // omitted. Potential-based per-agent HORIZONTAL (xz) goal-distance reward, STAGED to fire only after the
+        // ramp is placed (see Tick). xz (not 3D) so the elevated goal cannot be farmed by jumping; staged so it
+        // never pulls the agent off the push before placement. Guides the climb the push-shaping cannot reach.
+        // Orthogonal to the coop lever (mass/geometry force cooperation regardless of any reward term); POCA
+        // per-agent-vs-group routing is pinned before the batch.
+        [SerializeField] private float goalShapingScale = 0.05f;
 
         // ---- Eval surface (Phase 6 consumes these names verbatim) ----
         public bool EvalMode { get; set; }
@@ -70,6 +83,10 @@ namespace NavSim.Runtime
         private int _s0Successes, _s1Successes, _s2Successes;  // monotone competence counters (never reset)
         private float _prevRampToTarget;                       // for potential-based shaping
         private int _jointPushSteps, _rampMoveSteps;           // JointPushFrac numerator/denominator
+        private float[] _prevDistToGoal;                       // per-agent, for goal-distance shaping
+        private float _epStartDistance;                        // curriculum instrumentation for the ended episode
+        // Per-episode sub-stage latches (StatsRecorder instrumentation: WHICH stage stalls, not just reward).
+        private bool _epReachedApproach, _epAscended, _epPlaced;
 
         // Per-episode layout isolation for the paired eval; training leaves the RNG free-running.
         public void SeedLayoutRng(int seed) => _layoutRng = new System.Random(seed);
@@ -122,6 +139,36 @@ namespace NavSim.Runtime
             }
             _prevRampToTarget = rampToTarget;
 
+            // GOAL (climb) shaping - the distance-bootstrap the push-shaping cannot provide. HORIZONTAL (xz)
+            // distance ONLY (the goal is elevated, so 3D distance would reward JUMPING toward it instead of
+            // walking up the slope - the Run-1 rollout showed exactly that). STAGED: applied only once the ramp
+            // is placed (RampAtTarget), so it guides the climb and never pulls the agent off the push before the
+            // ramp is placed (the push->climb seam misguide). _prevDistToGoal is tracked every step so the first
+            // post-placement delta is not a spurious jump. Per-agent, routed to that agent (scorer=i).
+            if (!EvalMode && _prevDistToGoal != null)
+            {
+                for (int i = 0; i < agents.Length; i++)
+                {
+                    Vector3 ap = agents[i].transform.position;
+                    float dGoal = HorizontalDist(ap, goal.position);   // xz only - jumping cannot exploit it
+                    if (RampAtTarget)
+                    {
+                        float gdelta = _prevDistToGoal[i] - dGoal;   // positive when the agent nears the goal (xz)
+                        if (gdelta != 0f) ApplySplit(ArmRouting.PerStep(_armMode, gdelta * goalShapingScale), i);
+                    }
+                    _prevDistToGoal[i] = dGoal;   // always tracked (even pre-placement) so the first delta is clean
+
+                    // Sub-stage latches (StatsRecorder): reached the climb approach, then the upper slope/crest
+                    // (large +z progress AND height - NOT a mere jump near spawn, which fooled the old y>1.5
+                    // latch in the Run-1 rollout). Placed = RampAtTarget (below).
+                    if (Vector3.Distance(new Vector3(ap.x, 0f, ap.z),
+                                         new Vector3(rampTarget.position.x, 0f, rampTarget.position.z - 2f)) < 2f)
+                        _epReachedApproach = true;
+                    if (ap.z >= 3.5f && ap.y >= 1.9f) _epAscended = true;   // upper slope/crest, not a spawn-area jump
+                }
+            }
+            if (RampAtTarget) _epPlaced = true;
+
             // Per-step time cost (M7 routing).
             if (!EvalMode) ApplySplit(ArmRouting.PerStep(_armMode, -1f / maxEpisodeSteps), 0);
 
@@ -158,6 +205,8 @@ namespace NavSim.Runtime
         // its vertical -x face, facing +x (the lateral-push mechanic), guarded for 1 or 2 agents.
         public void ResetEpisode()
         {
+            RecordSubstages();   // log which stage the JUST-ENDED episode reached (before the latches reset)
+            _epReachedApproach = false; _epAscended = false; _epPlaced = false;
             StepsThisEpisode = 0;
             Success = false;
             LastScorerIndex = -1;
@@ -176,14 +225,34 @@ namespace NavSim.Runtime
             };
             ramp.Mass = mass;
 
-            // Ramp start distance (Near->Far lerp): S0 and S3 competence-ramp near(naive)->far(competent) via
-            // startRamp so a naive agent gets the SHORT push (bootstrap); S1/S2 stay near. EvalMode = far (hard end).
-            float startRamp = _lesson >= 3
-                ? (EvalMode ? 1f : Competence.Ramp01(_s2Successes, s2RampSuccesses))
-                : (_lesson == 0 ? (EvalMode ? 1f : Competence.Ramp01(_s0Successes, Mathf.Max(1, s2RampSuccesses))) : 1f);
-            Vector3 startPos = Vector3.Lerp(NearRampStart(), FarRampStart(), (_lesson == 0 || _lesson >= 3) ? startRamp : 0f);
+            // Ramp start distance: S0 starts just outside the target and recedes to the normal near start as
+            // competence grows. S1/S2 use the normal near start. S3 retains its near->far stretch curriculum.
+            // EvalMode always selects the hard endpoint for the active lesson.
+            Vector3 nearStart = NearRampStart();
+            Vector3 startPos;
+            if (_lesson == 0)
+            {
+                float startX = RampCurriculum.S0StartX(
+                    _s0Successes,
+                    s0StartSuccesses,
+                    rampTarget.position.x,
+                    nearStart.x,
+                    s0InitialPushDistance,
+                    EvalMode);
+                startPos = new Vector3(startX, nearStart.y, nearStart.z);
+            }
+            else if (_lesson >= 3)
+            {
+                float startRamp = EvalMode ? 1f : Competence.Ramp01(_s2Successes, s2RampSuccesses);
+                startPos = Vector3.Lerp(nearStart, FarRampStart(), startRamp);
+            }
+            else
+            {
+                startPos = nearStart;
+            }
             ramp.ResetTo(startPos, Quaternion.identity);
             _prevRampToTarget = Vector3.Distance(startPos, rampTarget.position);
+            _epStartDistance = _prevRampToTarget;
 
             // Spawns (LATERAL-push mechanic - verify-early #1 geometry). Agents stand BESIDE the ramp on the
             // -x side of its tall vertical -x face, facing +x, so driving forward shoves the ramp toward
@@ -202,13 +271,41 @@ namespace NavSim.Runtime
             }
 
             Physics.SyncTransforms();
+            InitPrevGoalDist();
         }
 
         // ---- internals ----
 
+        // Per-agent goal-distance baseline for the potential-based goal shaping (call after spawns + SyncTransforms).
+        private void InitPrevGoalDist()
+        {
+            if (_prevDistToGoal == null || _prevDistToGoal.Length != agents.Length)
+                _prevDistToGoal = new float[agents.Length];
+            for (int i = 0; i < agents.Length; i++)
+                _prevDistToGoal[i] = HorizontalDist(agents[i].transform.position, goal.position);
+        }
+
+        // Horizontal (xz) distance - goal shaping ignores the vertical axis so the elevated goal cannot be
+        // farmed by jumping toward it (the Run-1 rollout showed 3D distance did exactly that).
+        private static float HorizontalDist(Vector3 a, Vector3 b) =>
+            new Vector2(a.x - b.x, a.z - b.z).magnitude;
+
+        // Sub-stage instrumentation -> tfevents (StatsRecorder): what fraction of episodes reach each stage, so
+        // the confirm shows WHICH stage stalls (a reward curve cannot). Training only; skips the first (empty) reset.
+        private void RecordSubstages()
+        {
+            if (EvalMode || StepsThisEpisode <= 0 || !Academy.Instance.IsCommunicatorOn) return;
+            var sr = Academy.Instance.StatsRecorder;
+            sr.Add("substage/placed", _epPlaced ? 1f : 0f);
+            sr.Add("substage/reachedApproach", _epReachedApproach ? 1f : 0f);
+            sr.Add("substage/ascended", _epAscended ? 1f : 0f);
+            sr.Add("substage/reachedGoal", Success ? 1f : 0f);
+            sr.Add("curriculum/startDistance", _epStartDistance);
+        }
+
         // Ramp start endpoints (lateral-push layout; rampStart wires the near reset when present in-scene).
-        // Near = rampStart (~(-5,1.24,2)): a 5m +x push for S0. Far = the SAME z-line and height, further -x
-        // for a longer +x push (S3 stretch / S0 late). Far x is bounded (-6.5) so an agent spawned
+        // Near = rampStart (~(-5,1.24,2)): the normal 5m +x push. Far = the SAME z-line and height, further -x
+        // for a longer +x push (S3 stretch). Far x is bounded (-6.5) so an agent spawned
         // AgentBehindOffset (3.2u) behind the ramp - plus its radius and jitter - stays inside the -x wall
         // (arenaHalf 11). The pre-lateral Far ((-(arenaHalf-3),0.5,-(arenaHalf-3))) was the old +z/embedded
         // layout - unreachable-vertical and off the push axis (verify-early #1 follow-up #2, fixed here).

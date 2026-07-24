@@ -56,8 +56,12 @@ public static class M8RampSceneSetup
     private static readonly string[] FanTags = { "wall", "ramp", "goal", "agent" };
 
     // Platform (raised ledge): top face at y = PlatformCenterY + PlatformHeight/2 = 2.0 (above jump apex).
-    private static readonly Vector3 PlatformCenter = new Vector3(0f, 1.0f, 7f);
-    private static readonly Vector3 PlatformSize = new Vector3(6f, 2.0f, 6f);
+    // South edge z=3.9 sits just beyond the tilted ramp collider's swept +z bound (~3.86). Extending it to
+    // z=3.5 made the platform overlap the ramp at the lateral-push start (their x faces already meet at x=-3),
+    // pinning every light/heavy push at x=-5 despite valid contacts. The 0.04u collider clearance preserves
+    // the push mechanic while still shortening the old walkable-top gap by ~0.1u.
+    private static readonly Vector3 PlatformCenter = new Vector3(0f, 1.0f, 6.95f);
+    private static readonly Vector3 PlatformSize = new Vector3(6f, 2.0f, 6.1f);
 
     // Wedge ramp (rotated cube slab). The slab tilts about the X axis, so its +z end is HIGH (walkable slope
     // faces the platform at +z) and - crucially for verify-early #1 - its +-X END FACES stay VERTICAL
@@ -107,7 +111,12 @@ public static class M8RampSceneSetup
             GameObject goal = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             goal.name = "Goal";
             goal.tag = "goal";
-            goal.transform.position = new Vector3(0f, 2.25f, 7f);
+            // Goal moved close to where the slope delivers (z=5, near the platform south edge z=3.9) so reaching
+            // it is a short walk after cresting - NOT the old razor 1.5u corridor at z=7 (verify-early cleared it
+            // by only 0.07u; the Run-1 rollout never reached it). y=2.5 seats the 1u-tall cylinder on the y=2
+            // platform instead of embedding it. Anti-leak: closest floor+jump-apex approach at the platform wall
+            // (0,1.23,3.9) is ~1.68u from the goal > goalRadius 1.5.
+            goal.transform.position = new Vector3(0f, 2.5f, 5f);
             goal.transform.localScale = new Vector3(1f, 0.5f, 1f);   // cylinder mesh is 2 tall -> 1u goal
 
             // --- Wedge ramp: DYNAMIC Rigidbody (PushableRampBody) + low-friction PhysicsMaterial. ---
@@ -147,6 +156,8 @@ public static class M8RampSceneSetup
             so.FindProperty("ramp").objectReferenceValue = rampBody;
             so.FindProperty("rampTarget").objectReferenceValue = target;
             so.FindProperty("rampStart").objectReferenceValue = start;
+            so.FindProperty("s0InitialPushDistance").floatValue = 1.75f;
+            so.FindProperty("s0StartSuccesses").intValue = 200;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             // Per-agent: arena back-ref + the F2-CRITICAL agentIndex (slot index -> the joint-push tracker bit;
@@ -235,6 +246,12 @@ public static class M8RampSceneSetup
             if (check.FindProperty("ramp").objectReferenceValue == null) errors.Add("arena ramp null");
             if (check.FindProperty("rampTarget").objectReferenceValue == null) errors.Add("arena rampTarget null");
             if (check.FindProperty("rampStart").objectReferenceValue == null) errors.Add("arena rampStart null");
+            float s0InitialPushDistance = check.FindProperty("s0InitialPushDistance").floatValue;
+            if (Mathf.Abs(s0InitialPushDistance - 1.75f) > 1e-5f)
+                errors.Add($"arena s0InitialPushDistance={s0InitialPushDistance} != 1.75");
+            int s0StartSuccesses = check.FindProperty("s0StartSuccesses").intValue;
+            if (s0StartSuccesses != 200)
+                errors.Add($"arena s0StartSuccesses={s0StartSuccesses} != 200");
 
             if (errors.Count > 0)
             {
