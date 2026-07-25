@@ -18,6 +18,14 @@ namespace NavSim.Runtime
             typeof(RampArena).GetField("s0InitialPushDistance", PrivateInstance);
         private static readonly FieldInfo S0Successes =
             typeof(RampArena).GetField("_s0Successes", PrivateInstance);
+        private static readonly FieldInfo RecorderWriter =
+            typeof(DemonstrationRecorder).GetField("m_DemoWriter", PrivateInstance);
+        private static readonly FieldInfo WriterMetadata =
+            typeof(DemonstrationWriter).GetField("m_MetaData", PrivateInstance);
+        private static readonly FieldInfo MetadataEpisodeCount =
+            typeof(DemonstrationWriter).Assembly
+                .GetType("Unity.MLAgents.Demonstrations.DemonstrationMetaData")
+                ?.GetField("numberEpisodes", BindingFlags.Instance | BindingFlags.Public);
 
         [Serializable]
         private sealed class RecordingReport
@@ -108,13 +116,13 @@ namespace NavSim.Runtime
             _report.attempts[rung]++;
             if (previousSuccess) _report.successes[rung]++;
             _completedAttempts++;
+            if (_recordMode) _report.recordedEpisodes++;
 
             PrepareNextStart(RampExpertLogic.StartDistance(_completedAttempts, _recordMode));
             if (_exitRequested) return;
 
             if (_recordMode)
             {
-                _report.recordedEpisodes++;
                 if (!previousSuccess)
                 {
                     Fail("recorded episode failed");
@@ -172,6 +180,17 @@ namespace NavSim.Runtime
             if (_recordMode && recorder != null)
             {
                 recorder.Record = false;
+                bool metadataPrepared = _report.recordedEpisodes == 0;
+                object writer = RecorderWriter?.GetValue(recorder);
+                if (writer != null)
+                    metadataPrepared = PrepareTerminalWriterForClose(
+                        writer, _report.recordedEpisodes);
+                if (!metadataPrepared)
+                {
+                    Debug.LogError("M8 recording metadata fields or episode count did not match");
+                    _report.completed = false;
+                    exitCode = 2;
+                }
                 recorder.Close();
             }
 
@@ -191,6 +210,25 @@ namespace NavSim.Runtime
 
             Application.Quit(exitCode);
             enabled = false;
+        }
+
+        private static bool PrepareTerminalWriterForClose(
+            object writer, int completedTerminalEpisodes)
+        {
+            if (writer == null || completedTerminalEpisodes < 1 ||
+                WriterMetadata == null || MetadataEpisodeCount == null)
+                return false;
+
+            object metadata = WriterMetadata.GetValue(writer);
+            if (metadata == null ||
+                MetadataEpisodeCount.GetValue(metadata) is not int currentEpisodes ||
+                currentEpisodes != completedTerminalEpisodes)
+                return false;
+
+            // The terminal AgentInfo already completed this episode. ML-Agents Close()
+            // unconditionally adds one more, so offset that pending increment.
+            MetadataEpisodeCount.SetValue(metadata, currentEpisodes - 1);
+            return true;
         }
     }
 }
