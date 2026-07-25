@@ -1,3 +1,4 @@
+using System.Linq;
 using NavSim.Runtime;
 using NUnit.Framework;
 using UnityEngine;
@@ -24,6 +25,15 @@ namespace NavSim.Tests.EditMode
         [TestCase(30, 5.0f)]
         public void StartDistance_DryRunGroupsTenAttemptsPerRung(int episode, float expected)
             => Assert.AreEqual(expected, RampExpertLogic.StartDistance(episode, false), 1e-5f);
+
+        [Test]
+        public void StartDistance_RecordingScheduleContainsTenOfEachRung()
+        {
+            float[] expected = { 1.75f, 2.5f, 3.5f, 5f };
+            foreach (float d in expected)
+                Assert.AreEqual(10, Enumerable.Range(0, 40)
+                    .Count(i => Mathf.Approximately(RampExpertLogic.StartDistance(i, true), d)));
+        }
 
         [Test]
         public void Decide_PushFacesPositiveXWithoutJump()

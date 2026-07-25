@@ -1,0 +1,196 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using Unity.MLAgents.Demonstrations;
+using UnityEngine;
+
+namespace NavSim.Runtime
+{
+    public sealed class M8RampRecordingController : MonoBehaviour
+    {
+        [SerializeField] private RampArena arena;
+        [SerializeField] private DemonstrationRecorder recorder;
+
+        private static readonly BindingFlags PrivateInstance =
+            BindingFlags.Instance | BindingFlags.NonPublic;
+        private static readonly FieldInfo InitialDistance =
+            typeof(RampArena).GetField("s0InitialPushDistance", PrivateInstance);
+        private static readonly FieldInfo S0Successes =
+            typeof(RampArena).GetField("_s0Successes", PrivateInstance);
+
+        [Serializable]
+        private sealed class RecordingReport
+        {
+            public string mode;
+            public bool completed;
+            public int[] attempts = new int[4];
+            public int[] successes = new int[4];
+            public int recordedEpisodes;
+        }
+
+        private RampArena _arena;
+        private RecordingReport _report;
+        private string _reportPath;
+        private bool _recordMode;
+        private bool _dryRunMode;
+        private bool _initialized;
+        private bool _exitRequested;
+        private int _completedAttempts;
+
+        private void Awake()
+        {
+            Time.timeScale = 20f;
+
+            string modeArg = System.Environment.GetCommandLineArgs()
+                .FirstOrDefault(a => a.StartsWith("--m8-mode="));
+            _recordMode = modeArg == "--m8-mode=record";
+            _dryRunMode = modeArg == "--m8-mode=dry-run";
+            _report = new RecordingReport
+            {
+                mode = _recordMode ? "record" : _dryRunMode ? "dry-run" : "invalid"
+            };
+
+            if (!_recordMode && !_dryRunMode)
+            {
+                Fail("missing --m8-mode=dry-run|record");
+                return;
+            }
+
+            _reportPath = Environment.GetEnvironmentVariable("M8_RECORD_REPORT");
+            if (string.IsNullOrEmpty(_reportPath))
+            {
+                Fail("missing M8_RECORD_REPORT");
+                return;
+            }
+
+            _arena = arena;
+            if (_arena == null)
+            {
+                Fail("RampArena reference missing");
+                return;
+            }
+
+            if (_recordMode)
+            {
+                if (recorder == null)
+                {
+                    Fail("DemonstrationRecorder reference missing");
+                    return;
+                }
+
+                string demoDirectory = Environment.GetEnvironmentVariable("M8_DEMO_DIR");
+                if (string.IsNullOrEmpty(demoDirectory))
+                {
+                    Fail("missing M8_DEMO_DIR");
+                    return;
+                }
+
+                recorder.DemonstrationDirectory = demoDirectory;
+                recorder.DemonstrationName = "M8RampSoloExpert";
+                recorder.Record = true;
+            }
+        }
+
+        public void HandleEpisodeBegin(bool previousSuccess)
+        {
+            if (_exitRequested) return;
+
+            if (!_initialized)
+            {
+                _initialized = true;
+                PrepareNextStart(RampExpertLogic.StartDistance(0, _recordMode));
+                return;
+            }
+
+            int completedIndex = _completedAttempts;
+            int rung = _recordMode ? completedIndex % 4 : Mathf.Min(completedIndex / 10, 3);
+            _report.attempts[rung]++;
+            if (previousSuccess) _report.successes[rung]++;
+            _completedAttempts++;
+
+            PrepareNextStart(RampExpertLogic.StartDistance(_completedAttempts, _recordMode));
+            if (_exitRequested) return;
+
+            if (_recordMode)
+            {
+                _report.recordedEpisodes++;
+                if (!previousSuccess)
+                {
+                    Fail("recorded episode failed");
+                    return;
+                }
+
+                if (_completedAttempts == 40)
+                {
+                    Finish(true, 0);
+                    return;
+                }
+            }
+            else
+            {
+                bool rungComplete = _completedAttempts % 10 == 0;
+                if (rungComplete && _report.successes[rung] < 9)
+                {
+                    Fail($"dry-run rung {rung} failed");
+                    return;
+                }
+
+                if (_completedAttempts == 40)
+                {
+                    Finish(true, 0);
+                    return;
+                }
+            }
+        }
+
+        private void PrepareNextStart(float distance)
+        {
+            if (InitialDistance == null || S0Successes == null)
+            {
+                Fail("RampArena recording fields not found");
+                return;
+            }
+
+            InitialDistance.SetValue(_arena, distance);
+            S0Successes.SetValue(_arena, 0);
+        }
+
+        private void Fail(string message)
+        {
+            Debug.LogError($"M8 recording failed: {message}");
+            Finish(false, 2);
+        }
+
+        private void Finish(bool completed, int exitCode)
+        {
+            if (_exitRequested) return;
+            _exitRequested = true;
+            _report ??= new RecordingReport { mode = "invalid" };
+            _report.completed = completed;
+
+            if (_recordMode && recorder != null)
+            {
+                recorder.Record = false;
+                recorder.Close();
+            }
+
+            if (!string.IsNullOrEmpty(_reportPath))
+            {
+                try
+                {
+                    string json = JsonUtility.ToJson(_report, true);
+                    File.WriteAllText(_reportPath, json);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError($"M8 recording report write failed: {exception}");
+                    exitCode = 2;
+                }
+            }
+
+            Application.Quit(exitCode);
+            enabled = false;
+        }
+    }
+}
