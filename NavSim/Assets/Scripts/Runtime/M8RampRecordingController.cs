@@ -113,6 +113,17 @@ namespace NavSim.Runtime
 
             int completedIndex = _completedAttempts;
             int rung = _recordMode ? completedIndex % 4 : Mathf.Min(completedIndex / 10, 3);
+            M8RampExpertAgent expert = _arena.Agents
+                .OfType<M8RampExpertAgent>()
+                .SingleOrDefault();
+            Vector3 agentPosition = expert != null ? expert.transform.position : Vector3.zero;
+            Debug.Log(
+                $"[M8DemoEpisode] episode={completedIndex + 1} " +
+                $"distance={RampExpertLogic.StartDistance(completedIndex, _recordMode):F2} " +
+                $"placement={_arena.RampAtTarget} goal={previousSuccess} " +
+                $"steps={_arena.StepsThisEpisode} state={expert?.DebugState.ToString() ?? "missing"} " +
+                $"stateSteps={(expert != null ? expert.DebugStateSteps : -1)} " +
+                $"agent={agentPosition:F3} ramp={_arena.Ramp.Position:F3}");
             _report.attempts[rung]++;
             if (previousSuccess) _report.successes[rung]++;
             _completedAttempts++;

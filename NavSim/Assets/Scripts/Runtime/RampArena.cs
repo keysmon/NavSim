@@ -6,7 +6,8 @@ namespace NavSim.Runtime
     // M8 push-the-ramp arena controller (a FORK of CoopArena): the SINGLE authority for layout, ramp
     // heaviness, outcome detection, reward application (via ArmRouting ONLY), and the episode boundary.
     // Flat walled arena (half-size 11, M5 footprint). A dynamic ramp must be pushed to its marked target;
-    // once placed it forms the only path an agent can take to reach the goal on the ledge.
+    // once placed it forms the intended path to the goal on the ledge. Success also requires the
+    // per-episode placement latch, so incidental goal-radius overlap cannot bypass the task sequence.
     //
     // THE TICK SEAM (load-bearing for eval): MonoBehaviour FixedUpdate does NOT fire under the eval
     // harness's manual script stepping (Physics.simulationMode=Script + Academy.EnvironmentStep() - the
@@ -172,10 +173,15 @@ namespace NavSim.Runtime
             // Per-step time cost (M7 routing).
             if (!EvalMode) ApplySplit(ArmRouting.PerStep(_armMode, -1f / maxEpisodeSteps), 0);
 
-            // Success = an agent reaches the goal (only reachable once the ramp is placed - enforced by geometry).
+            // Success = an agent reaches the goal after this episode has placed the ramp. The explicit
+            // sequence latch is load-bearing: goal-radius overlap alone is not proof that the ledge was
+            // reached (a jump at the south wall can graze the spherical trigger).
             int scorer = -1;
-            for (int i = 0; i < agents.Length && scorer < 0; i++)
-                if (Vector3.Distance(agents[i].transform.position, goal.position) < goalRadius) scorer = i;
+            if (_epPlaced)
+            {
+                for (int i = 0; i < agents.Length && scorer < 0; i++)
+                    if (Vector3.Distance(agents[i].transform.position, goal.position) < goalRadius) scorer = i;
+            }
 
             if (scorer >= 0 && !Success)
             {

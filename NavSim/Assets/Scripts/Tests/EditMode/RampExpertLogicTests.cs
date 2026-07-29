@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Reflection;
 using NavSim.Runtime;
 using NUnit.Framework;
 using UnityEngine;
@@ -143,6 +144,22 @@ namespace NavSim.Tests.EditMode
                 Assert.That(step.Forward, Is.InRange(-1f, 1f));
                 Assert.That(step.Turn, Is.InRange(-1f, 1f));
             }
+        }
+
+        [TestCase(1f, 5, 0.2f)]
+        [TestCase(-0.75f, 5, -0.15f)]
+        [TestCase(0.4f, 1, 0.4f)]
+        public void ExpertAdapter_ScalesTurnAcrossRepeatedActionSteps(
+            float intendedPerStepTurn, int repeatHorizon, float expected)
+        {
+            MethodInfo scaleTurn = typeof(M8RampExpertAgent).GetMethod(
+                "ScaleTurnForRepeatHorizon",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.NotNull(scaleTurn);
+            float actual = (float)scaleTurn.Invoke(
+                null, new object[] { intendedPerStepTurn, repeatHorizon });
+            Assert.AreEqual(expected, actual, 1e-6f);
         }
     }
 }

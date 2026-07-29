@@ -12,9 +12,10 @@ using NavSim.Runtime;
 // M8 "Cooperative Tool Use" platform-scene builder (a FORK of M7CoopSceneSetup, committed tooling).
 // Builds Assets/Scenes/Ramp.unity (2 agents) / Ramp_solo.unity (1 agent) FROM SCRATCH:
 //   - Floor + 4 outer walls (M5 footprint, half-size 11).
-//   - A raised PLATFORM whose top face (y=2.0) is ABOVE the agent's jump apex
-//     (jumpImpulse 7, gravity -20 -> apex ~1.23m), so the ledge cannot be hopped: the ramp is the
-//     ONLY path to the goal (anti-leak geometry).
+//   - A raised PLATFORM whose top face (y=2.0) is above the agent's jump rise
+//     (jumpImpulse 7, gravity -20 -> ~1.23m above the grounded transform). This makes the ramp the
+//     intended path; RampArena also gates success on its per-episode placement latch because the
+//     spherical goal radius can otherwise be grazed near the platform edge.
 //   - The GOAL cylinder on the platform top.
 //   - A wedge RAMP that is a DYNAMIC Rigidbody (PushableRampBody auto-adds it via [RequireComponent])
 //     with a low-friction PhysicsMaterial on its collider (Assets/Models/M8/RampSlide.physicsMaterial),
@@ -103,7 +104,7 @@ public static class M8RampSceneSetup
             MakeCube("WallWest", new Vector3(-ArenaHalf, WallHeight / 2f, 0f),
                 new Vector3(WallThickness, WallHeight, 2f * ArenaHalf + WallThickness), "wall");
 
-            // --- Raised platform: top surface ABOVE jump apex so it cannot be jumped (anti-leak). ---
+            // --- Raised platform: top surface above a jump's vertical rise; placement latch closes radius leaks. ---
             GameObject platform = MakeCube("Platform", PlatformCenter, PlatformSize, null);
             float platformTopY = PlatformCenter.y + PlatformSize.y / 2f;   // 2.0
 
@@ -114,8 +115,8 @@ public static class M8RampSceneSetup
             // Goal moved close to where the slope delivers (z=5, near the platform south edge z=3.9) so reaching
             // it is a short walk after cresting - NOT the old razor 1.5u corridor at z=7 (verify-early cleared it
             // by only 0.07u; the Run-1 rollout never reached it). y=2.5 seats the 1u-tall cylinder on the y=2
-            // platform instead of embedding it. Anti-leak: closest floor+jump-apex approach at the platform wall
-            // (0,1.23,3.9) is ~1.68u from the goal > goalRadius 1.5.
+            // platform instead of embedding it. The nearby spherical goal radius can be grazed by a wall jump,
+            // so RampArena's per-episode placement latch—not this geometry alone—enforces push-before-goal.
             goal.transform.position = new Vector3(0f, 2.5f, 5f);
             goal.transform.localScale = new Vector3(1f, 0.5f, 1f);   // cylinder mesh is 2 tall -> 1u goal
 

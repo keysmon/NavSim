@@ -1,6 +1,6 @@
 {
   "name": "MultiAgentNav.EditModeTests",
-  "references": ["UnityEngine.TestRunner", "UnityEditor.TestRunner", "MultiAgentNav.Runtime"],
+  "references": ["UnityEngine.TestRunner", "UnityEditor.TestRunner", "MultiAgentNav.Runtime", "Unity.ML-Agents"],
   "includePlatforms": ["Editor"],
   "overrideReferences": true,
   "precompiledReferences": ["nunit.framework.dll"],
