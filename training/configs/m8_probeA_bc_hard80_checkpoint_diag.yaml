@@ -26,7 +26,7 @@ behaviors:
         gamma: 0.99
         strength: 1.0
     behavioral_cloning:
-      demo_path: NavSim/Assets/Demonstrations/M8RampSoloExpertHard80.demo
+      demo_path: NavSim/Assets/Demonstrations/M8RampHard80.demo
       strength: 0.3
       steps: 150000
       batch_size: 512

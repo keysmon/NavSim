@@ -2,6 +2,7 @@ using System.Linq;
 using System.Reflection;
 using NavSim.Runtime;
 using NUnit.Framework;
+using Unity.MLAgents.Demonstrations;
 using UnityEngine;
 
 namespace NavSim.Tests.EditMode
@@ -42,6 +43,19 @@ namespace NavSim.Tests.EditMode
         [TestCase(80)]
         public void HardStartDistance_IsAlwaysFiveUnits(int episode)
             => Assert.AreEqual(5f, RampExpertLogic.HardStartDistance(episode), 1e-5f);
+
+        [Test]
+        public void HardDemonstrationName_SurvivesRecorderSanitization()
+        {
+            MethodInfo sanitize = typeof(DemonstrationRecorder).GetMethod(
+                "SanitizeName", BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.NotNull(sanitize);
+            string sanitized = (string)sanitize.Invoke(
+                null, new object[] { RampExpertLogic.HardDemonstrationName, 16 });
+            Assert.AreEqual("M8RampHard80", sanitized);
+            Assert.AreNotEqual("M8RampSoloExpert", sanitized);
+        }
 
         [Test]
         public void Decide_PushFacesPositiveXWithoutJump()

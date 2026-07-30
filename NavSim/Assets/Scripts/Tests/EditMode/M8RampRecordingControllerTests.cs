@@ -52,7 +52,7 @@ namespace NavSim.Tests.EditMode
             object metadata = Activator.CreateInstance(metadataType);
             FieldInfo numberEpisodes = metadataType.GetField("numberEpisodes");
             metadataType.GetField("demonstrationName")
-                .SetValue(metadata, "M8RampSoloExpertHard80");
+                .SetValue(metadata, "M8RampHard80");
             numberEpisodes.SetValue(metadata, 80);
             writerType.GetField("m_MetaData", PrivateInstance).SetValue(writer, metadata);
 

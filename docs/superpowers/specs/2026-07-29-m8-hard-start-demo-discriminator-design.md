@@ -11,7 +11,7 @@ batch, or another 600k run.
 
 ## Demonstration
 
-Create a separate demonstration named `M8RampSoloExpertHard80` containing
+Create a separate demonstration named `M8RampHard80` containing
 exactly 80 successful terminal episodes. Every episode starts with the ramp at
 the full 5-unit push distance. This supplies eight times the hard-start
 trajectory count in the existing mixed demonstration, which contains ten
@@ -29,7 +29,7 @@ must fail closed if:
 - the demonstration metadata name or episode count is incorrect.
 
 Write the new artifact to
-`NavSim/Assets/Demonstrations/M8RampSoloExpertHard80.demo`. Preserve
+`NavSim/Assets/Demonstrations/M8RampHard80.demo`. Preserve
 `M8RampSoloExpert.demo`, its metadata, and all previous reports and results.
 
 ## Invariants

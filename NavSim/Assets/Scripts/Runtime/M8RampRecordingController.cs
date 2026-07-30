@@ -15,7 +15,6 @@ namespace NavSim.Runtime
         private const int MixedEpisodeCount = 40;
         private const int HardEpisodeCount = 80;
         private const string MixedDemoName = "M8RampSoloExpert";
-        private const string HardDemoName = "M8RampSoloExpertHard80";
 
         [SerializeField] private RampArena arena;
         [SerializeField] private DemonstrationRecorder recorder;
@@ -222,7 +221,9 @@ namespace NavSim.Runtime
             mode == RecordingMode.Hard80 ? HardEpisodeCount : MixedEpisodeCount;
 
         private static string DemonstrationName(RecordingMode mode) =>
-            mode == RecordingMode.Hard80 ? HardDemoName : MixedDemoName;
+            mode == RecordingMode.Hard80
+                ? RampExpertLogic.HardDemonstrationName
+                : MixedDemoName;
 
         private static float StartDistance(RecordingMode mode, int episodeIndex) =>
             mode switch

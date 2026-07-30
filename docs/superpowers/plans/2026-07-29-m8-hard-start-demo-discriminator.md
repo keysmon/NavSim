@@ -14,7 +14,8 @@
 - Do not modify geometry, physics, rewards, observations, actions, expert steering, trainer hyperparameters, curriculum, seed, environment count, ports, player, or time scale.
 - Do not modify or stage the unrelated untracked `docs/research/`.
 - Do not start Probe B, S1/S2, the real batch, or a 600k run.
-- Use new names containing `M8RampSoloExpertHard80` or `m8_probeA_bc_hard80_checkpoint_diag`.
+- Use the ML-Agents-compatible demo name `M8RampHard80` (within its 16-character
+  metadata limit) and run names containing `m8_probeA_bc_hard80_checkpoint_diag`.
 - Run one bounded 160k trainer invocation only after every preflight gate passes.
 - Stop after reporting the discriminator decision; do not promote a model.
 
@@ -30,7 +31,7 @@
 
 **Interfaces:**
 - Consumes: the current mixed `--m8-mode=record` and grouped `--m8-mode=dry-run` behavior.
-- Produces: `--m8-mode=record-hard80`, `RampExpertLogic.HardStartDistance`, and an 80-episode terminal contract named `M8RampSoloExpertHard80`.
+- Produces: `--m8-mode=record-hard80`, `RampExpertLogic.HardStartDistance`, and an 80-episode terminal contract named `M8RampHard80`.
 
 - [ ] **Step 1: Write failing schedule and metadata tests**
 
@@ -52,7 +53,7 @@ extract its reflection setup into a helper and add:
 [Test]
 public void RecorderClose_AfterEightyTerminalEpisodesPreservesMetadataCount()
 {
-    var fixture = CreateWriterFixture("M8RampSoloExpertHard80", 80);
+    var fixture = CreateWriterFixture("M8RampHard80", 80);
     Assert.IsTrue(PrepareClose(fixture.Writer, 80));
     fixture.Close();
     Assert.AreEqual(80, fixture.EpisodeCount);
@@ -101,7 +102,7 @@ private enum RecordingMode { Invalid, DryRun, Mixed40, Hard80 }
 private const int MixedEpisodeCount = 40;
 private const int HardEpisodeCount = 80;
 private const string MixedDemoName = "M8RampSoloExpert";
-private const string HardDemoName = "M8RampSoloExpertHard80";
+private const string HardDemoName = "M8RampHard80";
 ```
 
 Parse:
@@ -202,8 +203,8 @@ Add:
 ```csharp
 public static void ValidateHard80Demo() =>
     ValidateDemoAtPath(
-        "Assets/Demonstrations/M8RampSoloExpertHard80.demo",
-        "M8RampSoloExpertHard80",
+        "Assets/Demonstrations/M8RampHard80.demo",
+        "M8RampHard80",
         80);
 ```
 
@@ -218,7 +219,7 @@ Copy `training/configs/m8_probeA_bc_checkpoint_diag.yaml` to
 `training/configs/m8_probeA_bc_hard80_checkpoint_diag.yaml` and change exactly:
 
 ```yaml
-demo_path: NavSim/Assets/Demonstrations/M8RampSoloExpertHard80.demo
+demo_path: NavSim/Assets/Demonstrations/M8RampHard80.demo
 ```
 
 Verify with:
@@ -256,8 +257,8 @@ git commit -m "feat(m8): register hard80 BC discriminator"
 ### Task 3: Record and preflight the Hard80 artifact
 
 **Files:**
-- Create: `NavSim/Assets/Demonstrations/M8RampSoloExpertHard80.demo`
-- Create: `NavSim/Assets/Demonstrations/M8RampSoloExpertHard80.demo.meta`
+- Create: `NavSim/Assets/Demonstrations/M8RampHard80.demo`
+- Create: `NavSim/Assets/Demonstrations/M8RampHard80.demo.meta`
 - Regenerate only if source changed: `NavSim/Assets/Scenes/Ramp_recording.unity`
 - Build output only: `NavSim/Builds/M8RampRecorder.app`
 
@@ -313,7 +314,7 @@ NavSim/Builds/M8RampRecorder.app/Contents/MacOS/NavSim \
 Expected: exit `0`; JSON says mode `record-hard80`, completed `true`,
 recordedEpisodes `80`, eighty start distances of `5.0`, and 80/80 placement
 plus goal success. Exactly one unsuffixed
-`M8RampSoloExpertHard80.demo` must exist.
+`M8RampHard80.demo` must exist.
 
 - [ ] **Step 4: Install and validate the new artifact**
 
@@ -327,7 +328,7 @@ Copy the candidate and its generated metadata into
   -logFile "$M8_HARD80_EVIDENCE_DIR/validate-hard80.log"
 ```
 
-Expected: name `M8RampSoloExpertHard80`, episodes `80`, compatible action and
+Expected: name `M8RampHard80`, episodes `80`, compatible action and
 observation shapes, exit `0`.
 
 - [ ] **Step 5: Run final preflight gates**
@@ -346,8 +347,8 @@ Do not train if any gate fails.
 - [ ] **Step 6: Commit the validated demonstration**
 
 ```bash
-git add NavSim/Assets/Demonstrations/M8RampSoloExpertHard80.demo \
-  NavSim/Assets/Demonstrations/M8RampSoloExpertHard80.demo.meta \
+git add NavSim/Assets/Demonstrations/M8RampHard80.demo \
+  NavSim/Assets/Demonstrations/M8RampHard80.demo.meta \
   NavSim/Assets/Scenes/Ramp_recording.unity
 git commit -m "feat(m8): record hard80 ramp demonstration"
 ```
