@@ -21,6 +21,9 @@ public static class M8RampDemonstrationSetup
     private const string RecorderBuild = "Builds/M8RampRecorder.app";
     private const string Demonstration = "Assets/Demonstrations/M8RampSoloExpert.demo";
     private const string DemonstrationName = "M8RampSoloExpert";
+    private const string Hard80Demonstration =
+        "Assets/Demonstrations/M8RampSoloExpertHard80.demo";
+    private const string Hard80DemonstrationName = "M8RampSoloExpertHard80";
 
     public static void BuildScene()
     {
@@ -138,16 +141,23 @@ public static class M8RampDemonstrationSetup
         }
     }
 
-    public static void ValidateDemo()
+    public static void ValidateDemo() =>
+        ValidateDemoAtPath(Demonstration, DemonstrationName, 40);
+
+    public static void ValidateHard80Demo() =>
+        ValidateDemoAtPath(Hard80Demonstration, Hard80DemonstrationName, 80);
+
+    private static void ValidateDemoAtPath(
+        string path, string expectedName, int expectedEpisodes)
     {
         try
         {
-            Require(File.Exists(Demonstration), $"canonical demonstration exists at {Demonstration}");
+            Require(File.Exists(path), $"demonstration exists at {path}");
             AssetDatabase.ImportAsset(
-                Demonstration,
+                path,
                 ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
-            Object summaryAsset = AssetDatabase.LoadMainAssetAtPath(Demonstration);
+            Object summaryAsset = AssetDatabase.LoadMainAssetAtPath(path);
             Require(summaryAsset != null, "demonstration importer produced a main asset");
             Require(
                 summaryAsset.GetType().Name == "DemonstrationSummary",
@@ -168,8 +178,10 @@ public static class M8RampDemonstrationSetup
             List<string> importedShapes = ReadImportedShapes(
                 RequiredProperty(summarySo, "observationSummaries"));
 
-            Require(importedName == DemonstrationName, $"demonstration name is {DemonstrationName}");
-            Require(episodes == 40, "demonstration contains exactly 40 episodes");
+            Require(importedName == expectedName, $"demonstration name is {expectedName}");
+            Require(
+                episodes == expectedEpisodes,
+                $"demonstration contains exactly {expectedEpisodes} episodes");
             Require(steps > 0, "demonstration contains at least one step");
             Require(continuous == 2, "demonstration action spec has two continuous actions");
             Require(
