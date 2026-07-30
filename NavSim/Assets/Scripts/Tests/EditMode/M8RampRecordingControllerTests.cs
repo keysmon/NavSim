@@ -15,7 +15,7 @@ namespace NavSim.Tests.EditMode
             BindingFlags.Static | BindingFlags.NonPublic;
 
         [Test]
-        public void RecorderClose_AfterFortyTerminalEpisodesPreservesMetadataCount()
+        public void RecorderClose_MixedDemoAfterFortyTerminalEpisodesPreservesMetadataCount()
         {
             Assembly mlAgents = AppDomain.CurrentDomain.GetAssemblies()
                 .Single(a => a.GetName().Name == "Unity.ML-Agents");
@@ -37,6 +37,32 @@ namespace NavSim.Tests.EditMode
             Assert.IsTrue((bool)prepareClose.Invoke(null, new[] { writer, (object)40 }));
             writerType.GetMethod("Close").Invoke(writer, null);
             Assert.AreEqual(40, numberEpisodes.GetValue(metadata));
+        }
+
+        [Test]
+        public void RecorderClose_HardDemoAfterEightyTerminalEpisodesPreservesMetadataCount()
+        {
+            Assembly mlAgents = AppDomain.CurrentDomain.GetAssemblies()
+                .Single(a => a.GetName().Name == "Unity.ML-Agents");
+            Type writerType = mlAgents.GetType(
+                "Unity.MLAgents.Demonstrations.DemonstrationWriter", true);
+            Type metadataType = mlAgents.GetType(
+                "Unity.MLAgents.Demonstrations.DemonstrationMetaData", true);
+            object writer = Activator.CreateInstance(writerType, new MemoryStream());
+            object metadata = Activator.CreateInstance(metadataType);
+            FieldInfo numberEpisodes = metadataType.GetField("numberEpisodes");
+            metadataType.GetField("demonstrationName")
+                .SetValue(metadata, "M8RampSoloExpertHard80");
+            numberEpisodes.SetValue(metadata, 80);
+            writerType.GetField("m_MetaData", PrivateInstance).SetValue(writer, metadata);
+
+            MethodInfo prepareClose = typeof(M8RampRecordingController).GetMethod(
+                "PrepareTerminalWriterForClose", PrivateStatic);
+
+            Assert.NotNull(prepareClose);
+            Assert.IsTrue((bool)prepareClose.Invoke(null, new[] { writer, (object)80 }));
+            writerType.GetMethod("Close").Invoke(writer, null);
+            Assert.AreEqual(80, numberEpisodes.GetValue(metadata));
         }
     }
 }

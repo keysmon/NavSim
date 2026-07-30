@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -9,6 +10,13 @@ namespace NavSim.Runtime
 {
     public sealed class M8RampRecordingController : MonoBehaviour
     {
+        private enum RecordingMode { Invalid, DryRun, Mixed40, Hard80 }
+
+        private const int MixedEpisodeCount = 40;
+        private const int HardEpisodeCount = 80;
+        private const string MixedDemoName = "M8RampSoloExpert";
+        private const string HardDemoName = "M8RampSoloExpertHard80";
+
         [SerializeField] private RampArena arena;
         [SerializeField] private DemonstrationRecorder recorder;
 
@@ -33,15 +41,16 @@ namespace NavSim.Runtime
             public string mode;
             public bool completed;
             public int[] attempts = new int[4];
+            public int[] placements = new int[4];
             public int[] successes = new int[4];
             public int recordedEpisodes;
+            public List<float> episodeStartDistances = new List<float>();
         }
 
         private RampArena _arena;
         private RecordingReport _report;
         private string _reportPath;
-        private bool _recordMode;
-        private bool _dryRunMode;
+        private RecordingMode _mode;
         private bool _initialized;
         private bool _exitRequested;
         private int _completedAttempts;
@@ -52,16 +61,15 @@ namespace NavSim.Runtime
 
             string modeArg = System.Environment.GetCommandLineArgs()
                 .FirstOrDefault(a => a.StartsWith("--m8-mode="));
-            _recordMode = modeArg == "--m8-mode=record";
-            _dryRunMode = modeArg == "--m8-mode=dry-run";
+            _mode = ParseMode(modeArg);
             _report = new RecordingReport
             {
-                mode = _recordMode ? "record" : _dryRunMode ? "dry-run" : "invalid"
+                mode = ModeName(_mode)
             };
 
-            if (!_recordMode && !_dryRunMode)
+            if (_mode == RecordingMode.Invalid)
             {
-                Fail("missing --m8-mode=dry-run|record");
+                Fail("missing --m8-mode=dry-run|record|record-hard80");
                 return;
             }
 
@@ -79,7 +87,7 @@ namespace NavSim.Runtime
                 return;
             }
 
-            if (_recordMode)
+            if (IsRecording(_mode))
             {
                 if (recorder == null)
                 {
@@ -95,7 +103,7 @@ namespace NavSim.Runtime
                 }
 
                 recorder.DemonstrationDirectory = demoDirectory;
-                recorder.DemonstrationName = "M8RampSoloExpert";
+                recorder.DemonstrationName = DemonstrationName(_mode);
                 recorder.Record = true;
             }
         }
@@ -107,41 +115,57 @@ namespace NavSim.Runtime
             if (!_initialized)
             {
                 _initialized = true;
-                PrepareNextStart(RampExpertLogic.StartDistance(0, _recordMode));
+                PrepareNextStart(StartDistance(_mode, 0));
                 return;
             }
 
             int completedIndex = _completedAttempts;
-            int rung = _recordMode ? completedIndex % 4 : Mathf.Min(completedIndex / 10, 3);
+            float completedStartDistance = StartDistance(_mode, completedIndex);
+            int rung = _mode switch
+            {
+                RecordingMode.Mixed40 => completedIndex % 4,
+                RecordingMode.Hard80 => 3,
+                _ => Mathf.Min(completedIndex / 10, 3)
+            };
             M8RampExpertAgent expert = _arena.Agents
                 .OfType<M8RampExpertAgent>()
                 .SingleOrDefault();
             Vector3 agentPosition = expert != null ? expert.transform.position : Vector3.zero;
             Debug.Log(
                 $"[M8DemoEpisode] episode={completedIndex + 1} " +
-                $"distance={RampExpertLogic.StartDistance(completedIndex, _recordMode):F2} " +
+                $"distance={completedStartDistance:F2} " +
                 $"placement={_arena.RampAtTarget} goal={previousSuccess} " +
                 $"steps={_arena.StepsThisEpisode} state={expert?.DebugState.ToString() ?? "missing"} " +
                 $"stateSteps={(expert != null ? expert.DebugStateSteps : -1)} " +
                 $"agent={agentPosition:F3} ramp={_arena.Ramp.Position:F3}");
             _report.attempts[rung]++;
+            if (_arena.RampAtTarget) _report.placements[rung]++;
             if (previousSuccess) _report.successes[rung]++;
+            _report.episodeStartDistances.Add(completedStartDistance);
             _completedAttempts++;
-            if (_recordMode) _report.recordedEpisodes++;
 
-            PrepareNextStart(RampExpertLogic.StartDistance(_completedAttempts, _recordMode));
+            PrepareNextStart(StartDistance(_mode, _completedAttempts));
             if (_exitRequested) return;
 
-            if (_recordMode)
+            if (IsRecording(_mode))
             {
-                if (!previousSuccess)
+                if (!previousSuccess || !_arena.RampAtTarget)
                 {
-                    Fail("recorded episode failed");
+                    Fail("recorded episode did not place ramp and reach goal");
                     return;
                 }
 
-                if (_completedAttempts == 40)
+                _report.recordedEpisodes++;
+                if (_completedAttempts == RequiredEpisodeCount(_mode))
                 {
+                    if (_mode == RecordingMode.Hard80 &&
+                        _report.episodeStartDistances.Any(
+                            distance => !Mathf.Approximately(
+                                distance, RampExpertLogic.HardStartDistance(0))))
+                    {
+                        Fail("hard recording contained a non-5-unit start");
+                        return;
+                    }
                     Finish(true, 0);
                     return;
                 }
@@ -155,7 +179,7 @@ namespace NavSim.Runtime
                     return;
                 }
 
-                if (_completedAttempts == 40)
+                if (_completedAttempts == MixedEpisodeCount)
                 {
                     Finish(true, 0);
                     return;
@@ -175,6 +199,39 @@ namespace NavSim.Runtime
             S0Successes.SetValue(_arena, 0);
         }
 
+        private static RecordingMode ParseMode(string modeArg) => modeArg switch
+        {
+            "--m8-mode=dry-run" => RecordingMode.DryRun,
+            "--m8-mode=record" => RecordingMode.Mixed40,
+            "--m8-mode=record-hard80" => RecordingMode.Hard80,
+            _ => RecordingMode.Invalid
+        };
+
+        private static string ModeName(RecordingMode mode) => mode switch
+        {
+            RecordingMode.DryRun => "dry-run",
+            RecordingMode.Mixed40 => "record",
+            RecordingMode.Hard80 => "record-hard80",
+            _ => "invalid"
+        };
+
+        private static bool IsRecording(RecordingMode mode) =>
+            mode == RecordingMode.Mixed40 || mode == RecordingMode.Hard80;
+
+        private static int RequiredEpisodeCount(RecordingMode mode) =>
+            mode == RecordingMode.Hard80 ? HardEpisodeCount : MixedEpisodeCount;
+
+        private static string DemonstrationName(RecordingMode mode) =>
+            mode == RecordingMode.Hard80 ? HardDemoName : MixedDemoName;
+
+        private static float StartDistance(RecordingMode mode, int episodeIndex) =>
+            mode switch
+            {
+                RecordingMode.Hard80 => RampExpertLogic.HardStartDistance(episodeIndex),
+                RecordingMode.Mixed40 => RampExpertLogic.StartDistance(episodeIndex, true),
+                _ => RampExpertLogic.StartDistance(episodeIndex, false)
+            };
+
         private void Fail(string message)
         {
             Debug.LogError($"M8 recording failed: {message}");
@@ -188,7 +245,7 @@ namespace NavSim.Runtime
             _report ??= new RecordingReport { mode = "invalid" };
             _report.completed = completed;
 
-            if (_recordMode && recorder != null)
+            if (IsRecording(_mode) && recorder != null)
             {
                 recorder.Record = false;
                 bool metadataPrepared = _report.recordedEpisodes == 0;

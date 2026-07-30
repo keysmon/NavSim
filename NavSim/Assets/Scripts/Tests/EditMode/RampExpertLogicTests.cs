@@ -36,6 +36,13 @@ namespace NavSim.Tests.EditMode
                     .Count(i => Mathf.Approximately(RampExpertLogic.StartDistance(i, true), d)));
         }
 
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(79)]
+        [TestCase(80)]
+        public void HardStartDistance_IsAlwaysFiveUnits(int episode)
+            => Assert.AreEqual(5f, RampExpertLogic.HardStartDistance(episode), 1e-5f);
+
         [Test]
         public void Decide_PushFacesPositiveXWithoutJump()
         {

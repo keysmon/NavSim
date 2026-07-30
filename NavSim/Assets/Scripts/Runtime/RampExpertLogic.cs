@@ -56,6 +56,12 @@ namespace NavSim.Runtime
             return interleaved ? Distances[i % 4] : Distances[Mathf.Min(i / 10, 3)];
         }
 
+        public static float HardStartDistance(int episodeIndex)
+        {
+            _ = episodeIndex;
+            return 5f;
+        }
+
         public static int StepBudget(RampExpertState state) => state switch
         {
             RampExpertState.Push => 1800,
