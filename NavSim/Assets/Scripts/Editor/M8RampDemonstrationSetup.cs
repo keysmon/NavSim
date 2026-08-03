@@ -23,6 +23,8 @@ public static class M8RampDemonstrationSetup
     private const string DemonstrationName = "M8RampSoloExpert";
     private const string Hard80Demonstration =
         "Assets/Demonstrations/M8RampHard80.demo";
+    private const string Push80Demonstration =
+        "Assets/Demonstrations/M8RampPush80.demo";
 
     public static void BuildScene()
     {
@@ -146,6 +148,10 @@ public static class M8RampDemonstrationSetup
     public static void ValidateHard80Demo() =>
         ValidateDemoAtPath(
             Hard80Demonstration, RampExpertLogic.HardDemonstrationName, 80);
+
+    public static void ValidatePush80Demo() =>
+        ValidateDemoAtPath(
+            Push80Demonstration, RampExpertLogic.PushDemonstrationName, 80);
 
     private static void ValidateDemoAtPath(
         string path, string expectedName, int expectedEpisodes)
