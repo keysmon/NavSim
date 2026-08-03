@@ -1,6 +1,28 @@
 {
   "checkpoints": {
-    "149951": {
+    "corrected_39960": {
+      "environment_forward_mean": 0.8237428665161133,
+      "environment_turn_mean": -0.0012356830993667245,
+      "no_jump_probability": 0.9185008406639099,
+      "raw_environment_label_mse": 1.0922573799755673,
+      "raw_forward_mean": 2.47122859954834,
+      "raw_forward_std": 0.9730909466743469,
+      "raw_scaled_target_mse": 0.14912215390393363,
+      "raw_turn_mean": -0.0037070494145154953,
+      "raw_turn_std": 0.9712617993354797
+    },
+    "corrected_79944": {
+      "environment_forward_mean": 0.958150327205658,
+      "environment_turn_mean": 0.004495191853493452,
+      "no_jump_probability": 0.9640665650367737,
+      "raw_environment_label_mse": 1.7688494983971892,
+      "raw_forward_mean": 2.87445068359375,
+      "raw_forward_std": 0.9558122158050537,
+      "raw_scaled_target_mse": 0.019925517842852906,
+      "raw_turn_mean": 0.013485575094819069,
+      "raw_turn_std": 0.9537457823753357
+    },
+    "original_149951": {
       "environment_forward_mean": 0.33155980706214905,
       "environment_turn_mean": 0.0028029358945786953,
       "no_jump_probability": 0.9844947457313538,
@@ -11,7 +33,7 @@
       "raw_turn_mean": 0.008408808149397373,
       "raw_turn_std": 0.9388457536697388
     },
-    "99986": {
+    "original_99986": {
       "environment_forward_mean": 0.3338814079761505,
       "environment_turn_mean": 0.0012663097586482763,
       "no_jump_probability": 0.9793263673782349,
