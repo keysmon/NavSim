@@ -1,0 +1,47 @@
+{
+  "checkpoints": {
+    "149951": {
+      "environment_forward_mean": 0.33155980706214905,
+      "environment_turn_mean": 0.0028029358945786953,
+      "no_jump_probability": 0.9844947457313538,
+      "raw_environment_label_mse": 0.0014352725499027765,
+      "raw_forward_mean": 0.9946794509887695,
+      "raw_forward_std": 0.949116051197052,
+      "raw_scaled_target_mse": 2.003815762241708,
+      "raw_turn_mean": 0.008408808149397373,
+      "raw_turn_std": 0.9388457536697388
+    },
+    "99986": {
+      "environment_forward_mean": 0.3338814079761505,
+      "environment_turn_mean": 0.0012663097586482763,
+      "no_jump_probability": 0.9793263673782349,
+      "raw_environment_label_mse": 0.0015033745248112318,
+      "raw_forward_mean": 1.0016441345214844,
+      "raw_forward_std": 0.955615222454071,
+      "raw_scaled_target_mse": 1.99014662638253,
+      "raw_turn_mean": 0.0037989295087754726,
+      "raw_turn_std": 0.9458829760551453
+    }
+  },
+  "contract": {
+    "mlagents_version": "1.1.0",
+    "raw_to_environment_scale": 3.0
+  },
+  "demo": {
+    "episode_length_counts": {
+      "23": 1,
+      "300": 11,
+      "301": 51,
+      "302": 17
+    },
+    "forward_gt_0_9_fraction": 0.9966817876344086,
+    "jump_counts": {
+      "0": 23808
+    },
+    "padding_experiences": 1536,
+    "processed_experiences": 25344,
+    "real_experiences": 23808,
+    "terminal_markers": 80,
+    "zero_turn_fraction": 0.9956317204301075
+  }
+}
