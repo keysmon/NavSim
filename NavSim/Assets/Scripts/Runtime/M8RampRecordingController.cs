@@ -10,10 +10,11 @@ namespace NavSim.Runtime
 {
     public sealed class M8RampRecordingController : MonoBehaviour
     {
-        private enum RecordingMode { Invalid, DryRun, Mixed40, Hard80 }
+        private enum RecordingMode { Invalid, DryRun, Mixed40, Hard80, Push80 }
 
         private const int MixedEpisodeCount = 40;
         private const int HardEpisodeCount = 80;
+        private const int PushEpisodeCount = 80;
         private const string MixedDemoName = "M8RampSoloExpert";
 
         [SerializeField] private RampArena arena;
@@ -52,6 +53,7 @@ namespace NavSim.Runtime
         private RecordingMode _mode;
         private bool _initialized;
         private bool _exitRequested;
+        private bool _placementBoundaryIssued;
         private int _completedAttempts;
 
         private void Awake()
@@ -68,7 +70,7 @@ namespace NavSim.Runtime
 
             if (_mode == RecordingMode.Invalid)
             {
-                Fail("missing --m8-mode=dry-run|record|record-hard80");
+                Fail("missing --m8-mode=dry-run|record|record-hard80|record-push80");
                 return;
             }
 
@@ -107,6 +109,34 @@ namespace NavSim.Runtime
             }
         }
 
+        private void FixedUpdate()
+        {
+            if (!ShouldIssuePlacementBoundary(
+                    _mode == RecordingMode.Push80,
+                    _arena != null && _arena.RampAtTarget,
+                    _placementBoundaryIssued))
+                return;
+
+            M8RampExpertAgent expert = _arena.Agents
+                .OfType<M8RampExpertAgent>()
+                .SingleOrDefault();
+            if (expert == null)
+            {
+                Fail("push-only recording expert missing");
+                return;
+            }
+
+            if (_arena.Success)
+            {
+                Fail("push-only episode reached goal before placement boundary");
+                return;
+            }
+
+            _placementBoundaryIssued = true;
+            expert.EndEpisode();
+            _arena.ResetEpisode();
+        }
+
         public void HandleEpisodeBegin(bool previousSuccess)
         {
             if (_exitRequested) return;
@@ -123,7 +153,7 @@ namespace NavSim.Runtime
             int rung = _mode switch
             {
                 RecordingMode.Mixed40 => completedIndex % 4,
-                RecordingMode.Hard80 => 3,
+                RecordingMode.Hard80 or RecordingMode.Push80 => 3,
                 _ => Mathf.Min(completedIndex / 10, 3)
             };
             M8RampExpertAgent expert = _arena.Agents
@@ -148,21 +178,38 @@ namespace NavSim.Runtime
 
             if (IsRecording(_mode))
             {
-                if (!previousSuccess || !_arena.RampAtTarget)
+                bool terminalAccepted = _mode == RecordingMode.Push80
+                    ? _placementBoundaryIssued && _arena.RampAtTarget && !previousSuccess
+                    : previousSuccess && _arena.RampAtTarget;
+                if (!terminalAccepted)
                 {
-                    Fail("recorded episode did not place ramp and reach goal");
+                    Fail(
+                        _mode == RecordingMode.Push80
+                            ? "push-only terminal did not place ramp before reaching goal"
+                            : "recorded episode did not place ramp and reach goal");
                     return;
                 }
 
                 _report.recordedEpisodes++;
+                _placementBoundaryIssued = false;
                 if (_completedAttempts == RequiredEpisodeCount(_mode))
                 {
-                    if (_mode == RecordingMode.Hard80 &&
+                    if ((_mode == RecordingMode.Hard80 ||
+                         _mode == RecordingMode.Push80) &&
                         _report.episodeStartDistances.Any(
                             distance => !Mathf.Approximately(
                                 distance, RampExpertLogic.HardStartDistance(0))))
                     {
                         Fail("hard recording contained a non-5-unit start");
+                        return;
+                    }
+                    if (_mode == RecordingMode.Push80 &&
+                        (_report.attempts.Sum() != PushEpisodeCount ||
+                         _report.placements.Sum() != PushEpisodeCount ||
+                         _report.successes.Sum() != 0 ||
+                         _report.recordedEpisodes != PushEpisodeCount))
+                    {
+                        Fail("push-only report totals did not match 80 attempts and placements with zero goals");
                         return;
                     }
                     Finish(true, 0);
@@ -203,6 +250,7 @@ namespace NavSim.Runtime
             "--m8-mode=dry-run" => RecordingMode.DryRun,
             "--m8-mode=record" => RecordingMode.Mixed40,
             "--m8-mode=record-hard80" => RecordingMode.Hard80,
+            "--m8-mode=record-push80" => RecordingMode.Push80,
             _ => RecordingMode.Invalid
         };
 
@@ -211,27 +259,41 @@ namespace NavSim.Runtime
             RecordingMode.DryRun => "dry-run",
             RecordingMode.Mixed40 => "record",
             RecordingMode.Hard80 => "record-hard80",
+            RecordingMode.Push80 => "record-push80",
             _ => "invalid"
         };
 
         private static bool IsRecording(RecordingMode mode) =>
-            mode == RecordingMode.Mixed40 || mode == RecordingMode.Hard80;
+            mode == RecordingMode.Mixed40 ||
+            mode == RecordingMode.Hard80 ||
+            mode == RecordingMode.Push80;
 
-        private static int RequiredEpisodeCount(RecordingMode mode) =>
-            mode == RecordingMode.Hard80 ? HardEpisodeCount : MixedEpisodeCount;
+        private static int RequiredEpisodeCount(RecordingMode mode) => mode switch
+        {
+            RecordingMode.Hard80 => HardEpisodeCount,
+            RecordingMode.Push80 => PushEpisodeCount,
+            _ => MixedEpisodeCount
+        };
 
-        private static string DemonstrationName(RecordingMode mode) =>
-            mode == RecordingMode.Hard80
-                ? RampExpertLogic.HardDemonstrationName
-                : MixedDemoName;
+        private static string DemonstrationName(RecordingMode mode) => mode switch
+        {
+            RecordingMode.Hard80 => RampExpertLogic.HardDemonstrationName,
+            RecordingMode.Push80 => RampExpertLogic.PushDemonstrationName,
+            _ => MixedDemoName
+        };
 
         private static float StartDistance(RecordingMode mode, int episodeIndex) =>
             mode switch
             {
-                RecordingMode.Hard80 => RampExpertLogic.HardStartDistance(episodeIndex),
+                RecordingMode.Hard80 or RecordingMode.Push80 =>
+                    RampExpertLogic.HardStartDistance(episodeIndex),
                 RecordingMode.Mixed40 => RampExpertLogic.StartDistance(episodeIndex, true),
                 _ => RampExpertLogic.StartDistance(episodeIndex, false)
             };
+
+        private static bool ShouldIssuePlacementBoundary(
+            bool pushOnly, bool rampAtTarget, bool alreadyIssued) =>
+            pushOnly && rampAtTarget && !alreadyIssued;
 
         private void Fail(string message)
         {

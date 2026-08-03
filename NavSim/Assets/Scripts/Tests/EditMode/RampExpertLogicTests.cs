@@ -58,6 +58,19 @@ namespace NavSim.Tests.EditMode
         }
 
         [Test]
+        public void PushDemonstrationName_SurvivesRecorderSanitization()
+        {
+            MethodInfo sanitize = typeof(DemonstrationRecorder).GetMethod(
+                "SanitizeName", BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.NotNull(sanitize);
+            string sanitized = (string)sanitize.Invoke(
+                null, new object[] { RampExpertLogic.PushDemonstrationName, 16 });
+            Assert.AreEqual("M8RampPush80", sanitized);
+            Assert.AreNotEqual(RampExpertLogic.HardDemonstrationName, sanitized);
+        }
+
+        [Test]
         public void Decide_PushFacesPositiveXWithoutJump()
         {
             var input = new RampExpertInput(

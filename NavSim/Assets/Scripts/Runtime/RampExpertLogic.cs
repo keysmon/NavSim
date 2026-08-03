@@ -49,6 +49,7 @@ namespace NavSim.Runtime
     public static class RampExpertLogic
     {
         public const string HardDemonstrationName = "M8RampHard80";
+        public const string PushDemonstrationName = "M8RampPush80";
 
         private static readonly float[] Distances = { 1.75f, 2.5f, 3.5f, 5f };
 
